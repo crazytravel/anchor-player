@@ -3,6 +3,7 @@ use serde::Serialize;
 #[derive(Clone, Debug, Serialize)]
 pub struct MusicInfo {
     pub codec: String,
+    pub codec_short: String,
     pub sample_rate: String,
     pub start_time: String,
     pub duration: String,
@@ -22,6 +23,7 @@ impl MusicInfo {
     pub fn new() -> Self {
         Self {
             codec: "".to_string(),
+            codec_short: "".to_string(),
             sample_rate: "".to_string(),
             start_time: "".to_string(),
             duration: "".to_string(),
@@ -48,5 +50,33 @@ pub struct Music {
 impl Music {
     pub fn new(duration: String, progress: String) -> Self {
         Self { duration, progress }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MusicMeta {
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+}
+
+impl MusicMeta {
+    pub fn new() -> Self {
+        Self {
+            title: "".to_string(),
+            artist: "".to_string(),
+            album: "".to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MusicImage {
+    pub image: String,
+}
+
+impl MusicImage {
+    pub fn new(image: String) -> Self {
+        Self { image }
     }
 }

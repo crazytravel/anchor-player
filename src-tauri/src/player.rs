@@ -19,17 +19,21 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::mpsc::Sender;
 
+use base64::engine::general_purpose;
+use base64::Engine;
 use lazy_static::lazy_static;
 use std::sync::atomic::{AtomicBool, Ordering};
 use symphonia::core::codecs::{DecoderOptions, FinalizeResult, CODEC_TYPE_NULL};
 use symphonia::core::errors::{Error, Result};
 use symphonia::core::formats::{Cue, FormatOptions, FormatReader, SeekMode, SeekTo, Track};
 use symphonia::core::io::{MediaSource, MediaSourceStream, ReadOnlySource};
-use symphonia::core::meta::{ColorMode, MetadataOptions, MetadataRevision, Tag, Value, Visual};
+use symphonia::core::meta::{
+    ColorMode, MetadataOptions, MetadataRevision, StandardTagKey, Tag, Value, Visual,
+};
 use symphonia::core::probe::{Hint, ProbeResult};
 use symphonia::core::units::{Time, TimeBase};
 
-use crate::music::Music;
+use crate::music::{Music, MusicImage, MusicMeta};
 use crate::resampler;
 use crate::{music, output};
 use clap::{Arg, ArgMatches};
@@ -47,6 +51,8 @@ pub fn start_play(
     music_path: &str,
     music: &Sender<Music>,
     music_info_tx: &Sender<MusicInfo>,
+    music_meta_tx: &Sender<MusicMeta>,
+    music_image_tx: &Sender<MusicImage>,
 ) -> Result<i32> {
     let path = Path::new(music_path);
     // Create a hint to help the format registry guess what format reader is appropriate.
@@ -90,7 +96,7 @@ pub fn start_play(
                 _ => OsStr::new("NoName"),
             };
 
-            dump_visuals(&mut probed, name);
+            dump_visuals(&mut probed, name, music_image_tx);
 
             let tracks = probed.format.tracks();
             if !tracks.is_empty() {
@@ -99,7 +105,8 @@ pub fn start_play(
 
                     let mut music_info = MusicInfo::new();
                     if let Some(codec) = symphonia::default::get_codecs().get_codec(params.codec) {
-                        music_info.codec = format!("{} ({})", codec.long_name, codec.short_name);
+                        music_info.codec = codec.long_name.to_string();
+                        music_info.codec_short = codec.short_name.to_string();
                     }
                     if let Some(rate) = params.sample_rate {
                         music_info.sample_rate = rate.to_string();
@@ -151,12 +158,20 @@ pub fn start_play(
                 }
             }
             // Playback mode.
-            print_format(path, &mut probed);
+            print_format(path, &mut probed, music_meta_tx);
             let seek = None;
             // Set the decoder options.
             let decode_opts = Default::default();
             // Play it!
-            play(probed.format, track, seek, &decode_opts, no_progress, music)
+            play(
+                probed.format,
+                track,
+                seek,
+                &decode_opts,
+                no_progress,
+                music,
+                music_meta_tx,
+            )
         }
         Err(err) => {
             // The input was not supported by any format reader.
@@ -166,7 +181,12 @@ pub fn start_play(
     }
 }
 
-fn start_play1(music_path: &str, music_tx: &Sender<Music>) {
+fn start_play1(
+    music_path: &str,
+    music_tx: &Sender<Music>,
+    music_meta_tx: &Sender<MusicMeta>,
+    music_image_tx: &Sender<MusicImage>,
+) {
     pretty_env_logger::init();
 
     let args = clap::Command::new("Symphonia Play")
@@ -260,7 +280,7 @@ fn start_play1(music_path: &str, music_tx: &Sender<Music>) {
         .get_matches();
 
     // For any error, return an exit code -1. Otherwise return the exit code provided.
-    let code = match run(&args, music_tx) {
+    let code = match run(&args, music_tx, music_meta_tx, music_image_tx) {
         Ok(code) => code,
         Err(err) => {
             error!("{}", err.to_string().to_lowercase());
@@ -271,7 +291,12 @@ fn start_play1(music_path: &str, music_tx: &Sender<Music>) {
     std::process::exit(code)
 }
 
-fn run(args: &ArgMatches, music_tx: &Sender<Music>) -> Result<i32> {
+fn run(
+    args: &ArgMatches,
+    music_tx: &Sender<Music>,
+    music_meta_tx: &Sender<MusicMeta>,
+    music_image_tx: &Sender<MusicImage>,
+) -> Result<i32> {
     let path = Path::new(args.get_one::<String>("INPUT").unwrap());
 
     // Create a hint to help the format registry guess what format reader is appropriate.
@@ -323,7 +348,7 @@ fn run(args: &ArgMatches, music_tx: &Sender<Music>) -> Result<i32> {
                     _ => OsStr::new("NoName"),
                 };
 
-                dump_visuals(&mut probed, name);
+                dump_visuals(&mut probed, name, music_image_tx);
             }
 
             // Select the operating mode.
@@ -347,11 +372,11 @@ fn run(args: &ArgMatches, music_tx: &Sender<Music>) -> Result<i32> {
                 )
             } else if args.get_flag("probe-only") {
                 // Probe-only mode only prints information about the format, tracks, metadata, etc.
-                print_format(path, &mut probed);
+                print_format(path, &mut probed, music_meta_tx);
                 Ok(0)
             } else {
                 // Playback mode.
-                print_format(path, &mut probed);
+                print_format(path, &mut probed, music_meta_tx);
 
                 // If present, parse the seek argument.
                 let seek = if let Some(time) = args.get_one::<String>("seek") {
@@ -375,6 +400,7 @@ fn run(args: &ArgMatches, music_tx: &Sender<Music>) -> Result<i32> {
                     &decode_opts,
                     no_progress,
                     music_tx,
+                    music_meta_tx,
                 )
             }
         }
@@ -435,8 +461,8 @@ fn play(
     decode_opts: &DecoderOptions,
     no_progress: bool,
     music_tx: &Sender<Music>,
+    music_meta_tx: &Sender<MusicMeta>,
 ) -> Result<i32> {
-    println!("PLAYING............");
     // If the user provided a track number, select that track if it exists, otherwise, select the
     // first track with a known codec.
     let track = track_num
@@ -496,6 +522,7 @@ fn play(
             decode_opts,
             no_progress,
             music_tx,
+            music_meta_tx,
         ) {
             Err(Error::ResetRequired) => {
                 // The demuxer indicated that a reset is required. This is sometimes seen with
@@ -531,6 +558,7 @@ fn play_track(
     decode_opts: &DecoderOptions,
     no_progress: bool,
     music_tx: &Sender<Music>,
+    music_meta_tx: &Sender<MusicMeta>,
 ) -> Result<i32> {
     // Get the selected track using the track ID.
     let track = match reader
@@ -570,7 +598,7 @@ fn play_track(
             reader.metadata().pop();
 
             if let Some(rev) = reader.metadata().current() {
-                print_update(rev);
+                print_update(rev, music_meta_tx);
             }
         }
 
@@ -686,30 +714,47 @@ fn do_verification(finalization: FinalizeResult) -> Result<i32> {
     }
 }
 
-fn dump_visual(visual: &Visual, file_name: &OsStr, index: usize) {
-    let extension = match visual.media_type.to_lowercase().as_str() {
-        "image/bmp" => ".bmp",
-        "image/gif" => ".gif",
-        "image/jpeg" => ".jpg",
-        "image/png" => ".png",
-        _ => "",
-    };
+fn dump_visual(
+    visual: &Visual,
+    file_name: &OsStr,
+    index: usize,
+    music_image_tx: &Sender<MusicImage>,
+) {
+    let content_type = visual.media_type.to_lowercase();
+    // let extension = match visual.media_type.to_lowercase().as_str() {
+    //     "image/bmp" => ".bmp",
+    //     "image/gif" => ".gif",
+    //     "image/jpeg" => ".jpg",
+    //     "image/png" => ".png",
+    //     _ => "",
+    // };
+    //
+    // println!("extension: {}", extension);
+    // let mut out_file_name = OsString::from(file_name);
+    // println!("out_file_name: {:?}", out_file_name);
+    // out_file_name.push(format!("-{:0>2}{}", index, extension));
+    //
+    // if let Err(err) = File::create(out_file_name).and_then(|mut file| file.write_all(&visual.data))
+    // {
+    //     warn!("failed to dump visual due to error {}", err);
+    // }
 
-    println!("extension: {}", extension);
-    let mut out_file_name = OsString::from(file_name);
-    out_file_name.push(format!("-{:0>2}{}", index, extension));
+    // convert the image to base64
+    let image = format!(
+        "data:{};base64, {}",
+        content_type,
+        general_purpose::STANDARD.encode(&visual.data)
+    );
 
-    if let Err(err) = File::create(out_file_name).and_then(|mut file| file.write_all(&visual.data))
-    {
-        warn!("failed to dump visual due to error {}", err);
-    }
+    music_image_tx
+        .send(MusicImage::new(image))
+        .expect("send the msg to frontend failed!");
 }
 
-fn dump_visuals(probed: &mut ProbeResult, file_name: &OsStr) {
-    println!("dump_visuals");
+fn dump_visuals(probed: &mut ProbeResult, file_name: &OsStr, music_image_tx: &Sender<MusicImage>) {
     if let Some(metadata) = probed.format.metadata().current() {
         for (i, visual) in metadata.visuals().iter().enumerate() {
-            dump_visual(visual, file_name, i);
+            dump_visual(visual, file_name, i, music_image_tx);
         }
 
         // Warn that certain visuals are preferred.
@@ -719,19 +764,19 @@ fn dump_visuals(probed: &mut ProbeResult, file_name: &OsStr) {
         }
     } else if let Some(metadata) = probed.metadata.get().as_ref().and_then(|m| m.current()) {
         for (i, visual) in metadata.visuals().iter().enumerate() {
-            dump_visual(visual, file_name, i);
+            dump_visual(visual, file_name, i, music_image_tx);
         }
     }
 }
 
-fn print_format(path: &Path, probed: &mut ProbeResult) {
+fn print_format(path: &Path, probed: &mut ProbeResult, music_meta_tx: &Sender<MusicMeta>) {
     println!("+ {}", path.display());
     print_tracks(probed.format.tracks());
 
     // Prefer metadata that's provided in the container format, over other tags found during the
     // probe operation.
     if let Some(metadata_rev) = probed.format.metadata().current() {
-        print_tags(metadata_rev.tags());
+        print_tags(metadata_rev.tags(), music_meta_tx);
         print_visuals(metadata_rev.visuals());
 
         // Warn that certain tags are preferred.
@@ -740,7 +785,7 @@ fn print_format(path: &Path, probed: &mut ProbeResult) {
             info!("not printing additional tags that were found while probing.");
         }
     } else if let Some(metadata_rev) = probed.metadata.get().as_ref().and_then(|m| m.current()) {
-        print_tags(metadata_rev.tags());
+        print_tags(metadata_rev.tags(), music_meta_tx);
         print_visuals(metadata_rev.visuals());
     }
 
@@ -749,8 +794,8 @@ fn print_format(path: &Path, probed: &mut ProbeResult) {
     println!();
 }
 
-fn print_update(rev: &MetadataRevision) {
-    print_tags(rev.tags());
+fn print_update(rev: &MetadataRevision, music_meta_tx: &Sender<MusicMeta>) {
+    print_tags(rev.tags(), music_meta_tx);
     print_visuals(rev.visuals());
     println!(":");
     println!();
@@ -875,13 +920,14 @@ fn print_cues(cues: &[Cue]) {
     }
 }
 
-fn print_tags(tags: &[Tag]) {
+fn print_tags(tags: &[Tag], music_meta_tx: &Sender<MusicMeta>) {
     if !tags.is_empty() {
         println!("|");
         println!("| // Tags //");
 
         let mut idx = 1;
 
+        let mut music_meta = MusicMeta::new();
         // Print tags with a standard tag key first, these are the most common tags.
         for tag in tags.iter().filter(|tag| tag.is_known()) {
             if let Some(std_key) = tag.std_key {
@@ -889,12 +935,29 @@ fn print_tags(tags: &[Tag]) {
                     "{}",
                     print_tag_item(idx, &format!("{:?}", std_key), &tag.value, 4)
                 );
+                match std_key {
+                    StandardTagKey::Album => {
+                        music_meta.album = tag.value.to_string();
+                    }
+                    StandardTagKey::Artist => {
+                        music_meta.artist = tag.value.to_string();
+                    }
+                    StandardTagKey::TrackTitle => {
+                        music_meta.title = tag.value.to_string();
+                    }
+                    _ => {}
+                }
             }
             idx += 1;
         }
 
+        music_meta_tx
+            .send(music_meta)
+            .expect("send the msg to frontend failed!");
+
         // Print the remaining tags with keys truncated to 26 characters.
         for tag in tags.iter().filter(|tag| !tag.is_known()) {
+            println!("第二层");
             println!("{}", print_tag_item(idx, &tag.key, &tag.value, 4));
             idx += 1;
         }
