@@ -31,6 +31,7 @@ function App() {
     const [musicInfo, setMusicInfo] = useState<MusicInfo>();
     const [music, setMusic] = useState<Music>();
     const [play, setPlay] = useState(false);
+    const [infoDisplay, setInfoDisplay] = useState(false);
     const [musicPath, setMusicPath] = useState("/Users/shuo/Downloads/1.wav");
 
     async function startPlay() {
@@ -46,6 +47,42 @@ function App() {
         }
         try {
             await invoke("play", {musicPath});
+        } catch (error) {
+            console.error("Error invoking play:", error);
+        }
+    }
+
+    async function startPlayPrevious() {
+        setPlay(!play);
+        if (play) {
+            try {
+                calculateProgress("0:00:00.0", "0:00:00.0");
+                await invoke("pause");
+            } catch (error) {
+                console.error("Error invoking pause:", error);
+            }
+            return;
+        }
+        try {
+            await invoke("play-previous", {musicPath});
+        } catch (error) {
+            console.error("Error invoking play:", error);
+        }
+    }
+
+    async function startPlayNext() {
+        setPlay(!play);
+        if (play) {
+            try {
+                calculateProgress("0:00:00.0", "0:00:00.0");
+                await invoke("pause");
+            } catch (error) {
+                console.error("Error invoking pause:", error);
+            }
+            return;
+        }
+        try {
+            await invoke("play-next", {musicPath});
         } catch (error) {
             console.error("Error invoking play:", error);
         }
@@ -134,14 +171,8 @@ function App() {
 
     return (
         <main className="container">
-            <h1>Anchor Player</h1>
-            <form
-                className="form"
-                onSubmit={(e) => {
-                    e.preventDefault();
-                    startPlay();
-                }}
-            >
+            <form className="form">
+                <label htmlFor="greet-input">Music Path:</label>
                 <input
                     id="greet-input"
                     className="path"
@@ -149,98 +180,146 @@ function App() {
                     placeholder="Enter a path..."
                     value={musicPath}
                 />
-                <button type="submit">{play ? 'Stop' : 'Play'}</button>
-            </form>
-            <div className="form">
-                <img
-                    src={coverImg}
-                    className={play ? "logo react rotate" : "logo react"}
-                    alt="React logo"
-                />
-            </div>
-            <div className="time-wrapper">
-                <div className="progress">{music?.progress}</div>
-                &nbsp;/&nbsp;
-                <div className="duration">{music?.duration}</div>
-            </div>
-            <div
-                className="progress-bar-container"
-                onClick={(e) => {
-                    const container = e.currentTarget;
-                    const rect = container.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const percentage = (x / rect.width) * 100;
-
-                    const durationSeconds = timeToSeconds(music?.duration || "0:00:00.0");
-                    const newTime = (percentage / 100) * durationSeconds;
-
-                    // Invoke your Rust function to seek to the new position
-                    invoke("seek", {position: newTime}).catch(console.error);
-                }}
-            >
+                <div className="img-container">
+                    <div className="img-wrapper">
+                        <img
+                            src={coverImg}
+                            className={play ? "logo rotate" : "logo"}
+                            alt="music"
+                        />
+                    </div>
+                </div>
                 <div
-                    className="progress-bar"
-                    style={{
-                        width: `${calculateProgress(music?.progress, music?.duration)}%`
+                    className="progress-bar-container"
+                    onClick={(e) => {
+                        const container = e.currentTarget;
+                        const rect = container.getBoundingClientRect();
+                        const x = e.clientX - rect.left;
+                        const percentage = (x / rect.width) * 100;
+
+                        const durationSeconds = timeToSeconds(music?.duration || "0:00:00.0");
+                        const newTime = (percentage / 100) * durationSeconds;
+
+                        // Invoke your Rust function to seek to the new position
+                        invoke("seek", {position: newTime}).catch(console.error);
                     }}
-                />
-            </div>
-            <div className="row">
-                <div className="label">Codec:</div>
-                <div className="col">{musicInfo?.codec}</div>
-            </div>
-            <div className="row">
-                <div className="label">Sample Rate:</div>
-                <div className="col">{musicInfo?.sample_rate}</div>
-            </div>
-            <div className="row">
-                <div className="label">Start Time:</div>
-                <div className="col">{musicInfo?.start_time}</div>
-            </div>
-            <div className="row">
-                <div className="label">Duration:</div>
-                <div className="col">{musicInfo?.duration}</div>
-            </div>
-            <div className="row">
-                <div className="label">Frames:</div>
-                <div className="col">{musicInfo?.frames}</div>
-            </div>
-            <div className="row">
-                <div className="label">Time Base:</div>
-                <div className="col">{musicInfo?.time_base}</div>
-            </div>
-            <div className="row">
-                <div className="label">Encoder Delay:</div>
-                <div className="col">{musicInfo?.encoder_delay}</div>
-            </div>
-            <div className="row">
-                <div className="label">Encoder Padding:</div>
-                <div className="col">{musicInfo?.encoder_padding}</div>
-            </div>
-            <div className="row">
-                <div className="label">Sample Format:</div>
-                <div className="col">{musicInfo?.sample_format}</div>
-            </div>
-            <div className="row">
-                <div className="label">Bits per Sample:</div>
-                <div className="col">{musicInfo?.bits_per_sample}</div>
-            </div>
-            <div className="row">
-                <div className="label">Channel:</div>
-                <div className="col">{musicInfo?.channel}</div>
-            </div>
-            <div className="row">
-                <div className="label">Channel Map:</div>
-                <div className="col">{musicInfo?.channel_map}</div>
-            </div>
-            <div className="row">
-                <div className="label">Channel Layout:</div>
-                <div className="col">{musicInfo?.channel_layout}</div>
-            </div>
-            <div className="row">
-                <div className="label">Language:</div>
-                <div className="col">{musicInfo?.language}</div>
-            </div>
+                >
+                    <div
+                        className="progress-bar"
+                        style={{
+                            width: `${calculateProgress(music?.progress, music?.duration)}%`
+                        }}
+                    />
+                </div>
+                <div className="play-bar-container">
+                    <div className="time">
+                        <div className="progress">{music?.progress}</div>
+                        &nbsp;/&nbsp;
+                        <div className="duration">{music?.duration}</div>
+                    </div>
+                    <div className="btn">
+                        <div className="prevous" onClick={() => startPlayPrevious()}>
+                            <svg xmlns="http://www.w3.org/2000/svg" height="48px" viewBox="0 -960 960 960" width="48px"
+                                 fill="#666666">
+                                <path
+                                    d="M220-240v-480h60v480h-60Zm520 0L394-480l346-240v480Zm-60-240Zm0 125v-250L499-480l181 125Z"/>
+                            </svg>
+                        </div>
+                        <div className="play" onClick={() => startPlay()}>
+                            {play ? (
+                                <svg xmlns="http://www.w3.org/2000/svg" height="60px" viewBox="0 -960 960 960"
+                                     width="60px"
+                                     fill="#666666">
+                                    <path
+                                        d="M320-320h320v-320H320v320ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/>
+                                </svg>
+                            ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" height="60px" viewBox="0 -960 960 960"
+                                     width="60px"
+                                     fill="#666666">
+                                    <path
+                                        d="m380-300 280-180-280-180v360ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/>
+                                </svg>
+                            )}
+                        </div>
+                        <div className="next" onClick={() => startPlayNext()}>
+                            <svg xmlns="http://www.w3.org/2000/svg" height="48px" viewBox="0 -960 960 960" width="48px"
+                                 fill="#666666">
+                                <path
+                                    d="M680-240v-480h60v480h-60Zm-460 0v-480l346 240-346 240Zm60-240Zm0 125 181-125-181-125v250Z"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <div className="info" onClick={() => setInfoDisplay(!infoDisplay)}>
+                        <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px"
+                             fill="#666666">
+                            <path
+                                d="M440-280h80v-240h-80v240Zm40-320q17 0 28.5-11.5T520-640q0-17-11.5-28.5T480-680q-17 0-28.5 11.5T440-640q0 17 11.5 28.5T480-600Zm0 520q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/>
+                        </svg>
+                    </div>
+                </div>
+                <div className={infoDisplay ? "music-info" : "music-info hide"}>
+                    <div className="info-bar">
+                        <span onClick={() => setInfoDisplay(!infoDisplay)}>{infoDisplay ? 'x' : '^'}</span>
+                    </div>
+                    <div className="row">
+                        <div className="label">Codec:</div>
+                        <div className="col">{musicInfo?.codec}</div>
+                    </div>
+                    <div className="row">
+                        <div className="label">Sample Rate:</div>
+                        <div className="col">{musicInfo?.sample_rate}</div>
+                    </div>
+                    <div className="row">
+                        <div className="label">Start Time:</div>
+                        <div className="col">{musicInfo?.start_time}</div>
+                    </div>
+                    <div className="row">
+                        <div className="label">Duration:</div>
+                        <div className="col">{musicInfo?.duration}</div>
+                    </div>
+                    <div className="row">
+                        <div className="label">Frames:</div>
+                        <div className="col">{musicInfo?.frames}</div>
+                    </div>
+                    <div className="row">
+                        <div className="label">Time Base:</div>
+                        <div className="col">{musicInfo?.time_base}</div>
+                    </div>
+                    <div className="row">
+                        <div className="label">Encoder Delay:</div>
+                        <div className="col">{musicInfo?.encoder_delay}</div>
+                    </div>
+                    <div className="row">
+                        <div className="label">Encoder Padding:</div>
+                        <div className="col">{musicInfo?.encoder_padding}</div>
+                    </div>
+                    <div className="row">
+                        <div className="label">Sample Format:</div>
+                        <div className="col">{musicInfo?.sample_format}</div>
+                    </div>
+                    <div className="row">
+                        <div className="label">Bits per Sample:</div>
+                        <div className="col">{musicInfo?.bits_per_sample}</div>
+                    </div>
+                    <div className="row">
+                        <div className="label">Channel:</div>
+                        <div className="col">{musicInfo?.channel}</div>
+                    </div>
+                    <div className="row">
+                        <div className="label">Channel Map:</div>
+                        <div className="col">{musicInfo?.channel_map}</div>
+                    </div>
+                    <div className="row">
+                        <div className="label">Channel Layout:</div>
+                        <div className="col">{musicInfo?.channel_layout}</div>
+                    </div>
+                    <div className="row">
+                        <div className="label">Language:</div>
+                        <div className="col">{musicInfo?.language}</div>
+                    </div>
+                </div>
+            </form>
         </main>
     );
 }

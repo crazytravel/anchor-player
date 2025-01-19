@@ -11,11 +11,6 @@
   },
   "app": {
     "windows": [
-      {
-        "title": "anchorplayer",
-        "width": 1000,
-        "height": 800
-      }
     ],
     "security": {
       "csp": null
