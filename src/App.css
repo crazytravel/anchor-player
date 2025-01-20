@@ -83,6 +83,7 @@ html, body {
     flex-direction: column;
     background-color: #f6f6f6;
     padding: 1em;
+    border-radius: .5em;
 }
 
 .play-wrapper {
@@ -108,54 +109,6 @@ html, body {
 }
 
 .form {
-}
-
-.row {
-    display: flex;
-}
-
-.music-info {
-    position: absolute;
-    background-color: #ffffff;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    margin: 1em;
-    border-radius: .6em;
-    transition: 0.75s;
-    padding-bottom: .5em;
-}
-
-.hide {
-    transform: translateY(110%);
-}
-
-.info-bar {
-    text-align: right;
-}
-
-.info-bar span {
-    padding: 0 .5em;
-    cursor: pointer;
-}
-
-.label {
-    display: flex;
-    justify-content: right;
-    align-items: center;
-    flex: 1;
-    text-align: right;
-    padding: 1px;
-    color: #666666;
-}
-
-.col {
-    display: flex;
-    justify-content: left;
-    align-items: center;
-    flex: 3;
-    text-align: left;
-    padding: 1px;
 }
 
 .progress {
@@ -282,6 +235,63 @@ button {
     justify-content: end;
 }
 
+.toolbar {
+    display: flex;
+    align-items: center;
+}
+
+.open-folder {
+    cursor: pointer;
+    margin-right: .5em;
+}
+
+.list {
+    padding: 0;
+    margin: .5em 0 0;
+}
+.list > li {
+    list-style: none;
+    padding: .5em;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #e8e8e8;
+}
+
+.list > li:hover {
+    background-color: #dee3e8;
+}
+
+.fileName {
+
+}
+
+.statusIcon {
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+}
+
+.active {
+    background-color: #535bf2;
+}
+
+.music-info {
+    position: absolute;
+    background-color: #ffffff;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    margin: 1em;
+    border-radius: .6em;
+    transition: 0.75s;
+    padding-bottom: .5em;
+}
+
+.hide {
+    transform: translateY(110%);
+}
+
 @media (prefers-color-scheme: dark) {
     #root {
         color: #f6f6f6;
@@ -304,9 +314,5 @@ button {
 
     .list-wrapper {
         background-color: #444444;
-    }
-
-    .music-info {
-        background-color: #333333;
     }
 }

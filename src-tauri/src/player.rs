@@ -22,7 +22,7 @@ use std::sync::mpsc::Sender;
 use base64::engine::general_purpose;
 use base64::Engine;
 use lazy_static::lazy_static;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use symphonia::core::codecs::{DecoderOptions, FinalizeResult, CODEC_TYPE_NULL};
 use symphonia::core::errors::{Error, Result};
 use symphonia::core::formats::{Cue, FormatOptions, FormatReader, SeekMode, SeekTo, Track};
@@ -39,9 +39,9 @@ use crate::{music, output};
 use clap::{Arg, ArgMatches};
 use log::{error, info, warn};
 use music::MusicInfo;
+use crate::output::AudioOutput;
 
 pub static PAUSED: AtomicBool = AtomicBool::new(false);
-
 enum SeekPosition {
     Time(f64),
     Timetamp(u64),
@@ -618,6 +618,7 @@ fn play_track(
 
                     // Try to open the audio output.
                     audio_output.replace(output::try_open(spec, duration).unwrap());
+
                 } else {
                     // TODO: Check the audio spec. and duration hasn't changed.
                 }
@@ -957,7 +958,6 @@ fn print_tags(tags: &[Tag], music_meta_tx: &Sender<MusicMeta>) {
 
         // Print the remaining tags with keys truncated to 26 characters.
         for tag in tags.iter().filter(|tag| !tag.is_known()) {
-            println!("第二层");
             println!("{}", print_tag_item(idx, &tag.key, &tag.value, 4));
             idx += 1;
         }

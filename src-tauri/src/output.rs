@@ -10,6 +10,7 @@
 use crate::player::PAUSED;
 use std::result;
 use std::sync::atomic::Ordering;
+use log::error;
 use symphonia::core::audio::{AudioBufferRef, SignalSpec};
 use symphonia::core::units::Duration;
 
@@ -392,6 +393,7 @@ mod cpal {
             // Flush is best-effort, ignore the returned result.
             let _ = self.stream.pause();
         }
+
     }
 }
 
@@ -408,6 +410,5 @@ pub fn try_open(spec: SignalSpec, duration: Duration) -> Result<Box<dyn AudioOut
 }
 
 pub fn try_pause() {
-    let was_paused = PAUSED.fetch_xor(true, Ordering::SeqCst);
-    println!("Playback {}", if was_paused { "resumed" } else { "paused" });
+    PAUSED.store(true, Ordering::SeqCst);
 }

@@ -46,7 +46,7 @@ fn play(music_path: &str, app: AppHandle) {
     });
     thread::spawn(move || {
         for music_info in music_info_rx {
-            music_info_app.emit("music-info", music_info).unwrap();
+            music_info_app.emit("music-Index", music_info).unwrap();
         }
     });
     thread::spawn(move || {
@@ -68,12 +68,13 @@ fn play(music_path: &str, app: AppHandle) {
 
 #[tauri::command]
 fn pause() {
-    player::pause();
+    unsafe { player::pause(); }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let win_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                 .title("Anchor Player")
