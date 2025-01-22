@@ -3,11 +3,23 @@ import {invoke} from "@tauri-apps/api/core";
 import {open} from '@tauri-apps/plugin-dialog';
 
 import "./App.css";
+import bg from './assets/bg.png';
 
 import {listen} from "@tauri-apps/api/event";
 import {Music, MusicImage, MusicInfo, MusicMeta} from "./declare.ts";
 import Info from "./info";
-import {InfoIcon, NextIcon, OpenFileIcon, OpenFolderIcon, PlayIcon, PreviousIcon, StopIcon} from "./icon";
+import {
+    InfoIcon,
+    NextIcon,
+    OpenFileIcon,
+    OpenFolderIcon,
+    PlayIcon,
+    PreviousIcon,
+    RandomIcon,
+    RepeatIcon,
+    RepeatOneIcon,
+    StopIcon
+} from "./icon";
 
 function App() {
     const [musicInfo, setMusicInfo] = useState<MusicInfo>();
@@ -17,74 +29,69 @@ function App() {
     const [musicMeta, setMusicMeta] = useState<MusicMeta>();
     const [musicImage, setMusicImage] = useState<MusicImage>();
     const [openedFiles, setOpenedFiles] = useState<string[]>();
-    const [musicPath, setMusicPath] = useState("");
+    const [musicPath, setMusicPath] = useState<string>();
+    const [sequenceType, setSequenceType] = useState(1);    // 1: repeat, 2: repeat one, 3: random
 
-    // async function stopPlay() {
-    //     setPlay(false);
-    //     setMusicImage(undefined);
-    //     setMusicMeta(undefined);
-    //     try {
-    //         calculateProgress("0:00:00.0", "0:00:00.0");
-    //         await invoke("pause");
-    //     } catch (error) {
-    //         console.error("Error invoking pause:", error);
-    //     }
-    // }
+    async function start() {
+        setPlay(() => true);
+        if (musicPath) {
+            const musicNameArr = musicPath.split('/');
+            let musicName = musicNameArr[musicNameArr.length - 1];
+            musicName = musicName.split('.')[0];
+            console.log('musicName:', musicName);
+            setMusicMeta({title: musicName, artist: '', album: ''});
+        }
+        await invoke('play', {musicPath});
+    }
 
-    async function startPlay() {
-        setPlay(!play);
+    async function stop() {
+        setPlay(() => false);
+        calculateProgress("0:00:00.0", "0:00:00.0");
+        await invoke('pause');
+    }
+
+    async function playManagement() {
+        if (!musicPath) {
+            if (openedFiles && openedFiles.length > 0) {
+                setMusicPath(() => openedFiles[0]);
+            }
+            return;
+        }
         setMusicImage(undefined);
         setMusicMeta(undefined);
         if (play) {
-            try {
-                calculateProgress("0:00:00.0", "0:00:00.0");
-                await invoke("pause");
-            } catch (error) {
-                console.error("Error invoking pause:", error);
-            }
+            await stop();
             return;
         }
-        try {
-            await invoke("play", {musicPath});
-        } catch (error) {
-            console.error("Error invoking play:", error);
-        }
+        await start();
     }
 
-    async function startPlayPrevious() {
-        setPlay(!play);
-        if (play) {
-            try {
-                calculateProgress("0:00:00.0", "0:00:00.0");
-                await invoke("pause");
-            } catch (error) {
-                console.error("Error invoking pause:", error);
-            }
-            return;
-        }
-        try {
-            await invoke("play-previous", {musicPath});
-        } catch (error) {
-            console.error("Error invoking play:", error);
-        }
+    async function repeatOnePlay() {
+        await start();
     }
 
-    async function startPlayNext() {
-        setPlay(!play);
-        if (play) {
-            try {
-                calculateProgress("0:00:00.0", "0:00:00.0");
-                await invoke("pause");
-            } catch (error) {
-                console.error("Error invoking pause:", error);
+    function startPlayPrevious() {
+        openedFiles?.forEach((file, index) => {
+            if (file === musicPath) {
+                if (index - 1 >= 0) {
+                    setMusicPath(() => openedFiles[index - 1]);
+                } else {
+                    setMusicPath(() => openedFiles[openedFiles.length - 1]);
+                }
             }
-            return;
-        }
-        try {
-            await invoke("play-next", {musicPath});
-        } catch (error) {
-            console.error("Error invoking play:", error);
-        }
+        });
+    }
+
+    function startPlayNext() {
+        openedFiles?.forEach((file, index) => {
+            if (file === musicPath) {
+                if (index + 1 < openedFiles.length) {
+                    setMusicPath(() => openedFiles[index + 1]);
+                } else {
+                    setMusicPath(() => openedFiles[0]);
+                }
+            }
+        });
     }
 
     let unListened: () => void;
@@ -95,7 +102,7 @@ function App() {
 
     const setupListener = async () => {
         try {
-            unListened = await listen<MusicInfo>("music-Index", (event) => {
+            unListened = await listen<MusicInfo>("music-info", (event) => {
                 // console.log("Received event:", event.payload);
                 setMusicInfo(event.payload);
             });
@@ -119,9 +126,22 @@ function App() {
     const setupFinishedListener = async () => {
         try {
             unListenedFinished = await listen<boolean>("finished", (event) => {
-                // console.log("Received event:", event.payload);
+                console.log("Received finish event:", event.payload);
                 if (event.payload) {
                     setPlay(false);
+                    // repeat
+                    if (sequenceType === 1) {
+                        startPlayNext();
+                    // repeat one
+                    } else if (sequenceType === 2) {
+                        repeatOnePlay();
+                    // random
+                    } else {
+                        if (openedFiles) {
+                            const index = Math.floor(Math.random() * openedFiles.length);
+                            setMusicPath(() => openedFiles[index]);
+                        }
+                    }
                 }
             });
         } catch (error) {
@@ -132,7 +152,7 @@ function App() {
     const setupMetaListener = async () => {
         try {
             unListenedMeta = await listen<MusicMeta>("music-meta", (event) => {
-                // console.log("Received event:", event.payload);
+                if (!event.payload.title) return;
                 setMusicMeta(event.payload);
             });
         } catch (error) {
@@ -189,6 +209,7 @@ function App() {
         });
         console.log(files);
         if (files) {
+            setMusicPath(undefined);
             setOpenedFiles(files);
         }
     }
@@ -207,17 +228,35 @@ function App() {
     }
 
     const changeMusic = async (file: string) => {
-        console.log("the file path", file)
+        if (file === musicPath) {
+            if (play) {
+                await stop();
+            } else {
+                await start();
+            }
+            return;
+        }
         setMusicPath(file);
     }
 
-    useEffect(() => {
-        const playMusic = async () => {
-            await startPlay();
-        };
-        if (musicPath) {
-            playMusic();
+    const changeSeq = () => {
+        if (sequenceType === 3) {
+            setSequenceType(1);
+        } else {
+            setSequenceType(sequenceType => sequenceType + 1);
         }
+    }
+
+    useEffect(() => {
+        async function changeState() {
+            if (musicPath) {
+                await stop();
+                setTimeout(async () => {
+                    await start();
+                }, 200);
+            }
+        }
+        changeState();
     }, [musicPath]);
 
     useEffect(() => {
@@ -254,42 +293,25 @@ function App() {
                         <OpenFolderIcon onClick={openFolder}/>
                     </div>
                     <ul className="list">
-                        {
-                            openedFiles?.map((file, index) => (
-                                <li key={index} className={file === musicPath && play ? 'active' : ''}>
-                                    <div className="fileName">
-                                        {file}
-                                    </div>
-                                    <div className="statusIcon" onClick={() => changeMusic(file)}>
-                                        {file === musicPath && play ? <StopIcon/> : <PlayIcon/>}
-                                    </div>
-                                </li>
-                            ))
-                        }
+                        {openedFiles?.map((file, index) => (
+                            <li key={index} className={file === musicPath && play ? 'active' : ''}>
+                                <div className="fileName">{file.split('/')[file.split('/').length - 1]}</div>
+                                <div className="statusIcon" onClick={() => changeMusic(file)}>
+                                    {file === musicPath && play ? <StopIcon/> : <PlayIcon/>}
+                                </div>
+                            </li>
+                        ))}
                     </ul>
                 </div>
                 <div className="play-wrapper">
-                    <div className="title">
-                        <div>Title: {musicMeta?.title || 'Unknown'}</div>
-                        <div>Artist: {musicMeta?.artist || 'Unknown'}</div>
-                        <div>Album: {musicMeta?.album || 'Unknown'}</div>
+                    <div className="title-wrapper">
+                        <div className="title">{musicMeta?.title}</div>
+                        <div className="artist">{musicMeta?.artist}</div>
+                        <div className="album">{musicMeta?.album}</div>
                     </div>
                     <div className="img-container">
-                        <div className={play ? "img-wrapper rotate" : "img-wrapper"}>
-                            {
-                                musicImage?.image ? (<img
-                                    src={musicImage.image}
-                                    className="logo"
-                                    alt="music"
-                                />) : (
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960"
-                                         fill="#666666"
-                                         className="logo"
-                                    >
-                                        <path
-                                            d="M400-240q50 0 85-35t35-85v-280h120v-80H460v256q-14-8-29-12t-31-4q-50 0-85 35t-35 85q0 50 35 85t85 35Zm80 160q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/>
-                                    </svg>)
-                            }
+                        <div className={play ? "img-wrapper rotate" : "img-wrapper"} >
+                            {musicImage?.image ? (<img src={musicImage.image} className="logo" alt="music" />) : (<img src={bg} className="logo" alt="music" />)}
                         </div>
                     </div>
                 </div>
@@ -312,22 +334,27 @@ function App() {
                 >
                     <div
                         className="progress-bar"
-                        style={{
-                            width: `${calculateProgress(music?.progress, music?.duration)}%`
-                        }}
+                        style={{width: `${calculateProgress(music?.progress, music?.duration)}%`}}
                     />
                 </div>
                 <div className="play-bar-container">
-                    <div className="time">
-                        <div className="progress">{music?.progress ? music.progress : '0:00:00.0'}</div>
-                        &nbsp;/&nbsp;
-                        <div className="duration">{music?.duration ? music.duration : '0:00:00.0'}</div>
+                    <div className="time-container">
+                        <div className="time-wrapper">
+                            <div className="progress">{music?.progress ? music.progress : '0:00:00.0'}</div>
+                            &nbsp;/&nbsp;
+                            <div className="duration">{music?.duration ? music.duration : '0:00:00.0'}</div>
+                        </div>
+                        <div className="seq-wrapper" onClick={changeSeq}>
+                            {sequenceType === 1 && <RepeatIcon/>}
+                            {sequenceType === 2 && <RepeatOneIcon/>}
+                            {sequenceType === 3 && <RandomIcon/>}
+                        </div>
                     </div>
                     <div className="btn">
                         <div className="prevous" onClick={() => startPlayPrevious()}>
                             <PreviousIcon/>
                         </div>
-                        <div className="play" onClick={startPlay}>
+                        <div className="play" onClick={playManagement}>
                             {play ? <StopIcon size={60}/> : <PlayIcon size={60}/>}
                         </div>
                         <div className="next" onClick={() => startPlayNext()}>
@@ -337,8 +364,8 @@ function App() {
                     <div className="info-wrapper">
                         <div className="short-info">
                             <div>{musicInfo?.codec_short}</div>
-                            <div>{musicInfo?.sample_rate}Hz</div>
-                            <div>{musicInfo?.bits_per_sample}bit</div>
+                            <div>{musicInfo?.sample_rate && `${musicInfo?.sample_rate}Hz`}</div>
+                            <div>{musicInfo?.bits_per_sample && `${musicInfo?.bits_per_sample}bit`}</div>
                         </div>
                         <div className="info" onClick={() => setInfoDisplay(!infoDisplay)}>
                             <InfoIcon/>

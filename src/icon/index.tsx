@@ -5,6 +5,10 @@ import PreviousIcon from "./previous-icon.tsx";
 import OpenFolderIcon from "./open-folder-icon.tsx";
 import PlayIcon from "./play-icon.tsx";
 import StopIcon from "./stop-icon.tsx";
+import AlbumIcon from "./album-icon.tsx";
+import RepeatIcon from "./repeat-icon.tsx";
+import RepeatOneIcon from "./repeat-one-icon.tsx";
+import RandomIcon from "./random-icon.tsx";
 
 export {
     PlayIcon,
@@ -13,5 +17,9 @@ export {
     PreviousIcon,
     NextIcon,
     OpenFileIcon,
-    OpenFolderIcon
+    OpenFolderIcon,
+    AlbumIcon,
+    RepeatIcon,
+    RepeatOneIcon,
+    RandomIcon
 }

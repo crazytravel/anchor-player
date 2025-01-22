@@ -46,7 +46,7 @@ fn play(music_path: &str, app: AppHandle) {
     });
     thread::spawn(move || {
         for music_info in music_info_rx {
-            music_info_app.emit("music-Index", music_info).unwrap();
+            music_info_app.emit("music-info", music_info).unwrap();
         }
     });
     thread::spawn(move || {
@@ -68,7 +68,7 @@ fn play(music_path: &str, app: AppHandle) {
 
 #[tauri::command]
 fn pause() {
-    unsafe { player::pause(); }
+    player::pause();
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -91,7 +91,6 @@ pub fn run() {
             {
                 use cocoa::appkit::{NSColor, NSWindow};
                 use cocoa::base::{id, nil};
-                use objc::runtime::Object;
                 use objc::{msg_send, sel, sel_impl};
 
                 let ns_window = window.ns_window().unwrap() as id;
@@ -108,9 +107,9 @@ pub fn run() {
                         // Dark mode color
                         NSColor::colorWithRed_green_blue_alpha_(
                             nil,
-                            47.0 / 255.0,
-                            47.0 / 255.0,
-                            47.0 / 255.0,
+                            27.0 / 255.0,
+                            27.0 / 255.0,
+                            27.0 / 255.0,
                             1.0,
                         )
                     } else {

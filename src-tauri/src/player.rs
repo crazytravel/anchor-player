@@ -582,6 +582,7 @@ fn play_track(
 
     // Decode and play the packets belonging to the selected track.
     let result = loop {
+
         // Get the next packet from the format reader.
         let packet = match reader.next_packet() {
             Ok(packet) => packet,
