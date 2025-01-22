@@ -31,6 +31,7 @@ function App() {
     const [openedFiles, setOpenedFiles] = useState<string[]>();
     const [musicPath, setMusicPath] = useState<string>();
     const [sequenceType, setSequenceType] = useState(1);    // 1: repeat, 2: repeat one, 3: random
+    const [playIndex, setPlayIndex] = useState<number>(-1);
 
     async function start() {
         setPlay(() => true);
@@ -41,6 +42,8 @@ function App() {
             console.log('musicName:', musicName);
             setMusicMeta({title: musicName, artist: '', album: ''});
         }
+        setMusicImage(undefined);
+        setMusicInfo(undefined);
         await invoke('play', {musicPath});
     }
 
@@ -53,7 +56,9 @@ function App() {
     async function playManagement() {
         if (!musicPath) {
             if (openedFiles && openedFiles.length > 0) {
+                console.log('xxxx:', musicPath);
                 setMusicPath(() => openedFiles[0]);
+                setPlayIndex(0);
             }
             return;
         }
@@ -63,6 +68,7 @@ function App() {
             await stop();
             return;
         }
+        console.log('我们宿舍')
         await start();
     }
 
@@ -71,27 +77,18 @@ function App() {
     }
 
     function startPlayPrevious() {
-        openedFiles?.forEach((file, index) => {
-            if (file === musicPath) {
-                if (index - 1 >= 0) {
-                    setMusicPath(() => openedFiles[index - 1]);
-                } else {
-                    setMusicPath(() => openedFiles[openedFiles.length - 1]);
-                }
-            }
-        });
+        if (playIndex === -1) return;
+        if (openedFiles) {
+            setMusicPath(() => openedFiles[playIndex]);
+            setPlayIndex(playIndex);
+        }
     }
 
     function startPlayNext() {
-        openedFiles?.forEach((file, index) => {
-            if (file === musicPath) {
-                if (index + 1 < openedFiles.length) {
-                    setMusicPath(() => openedFiles[index + 1]);
-                } else {
-                    setMusicPath(() => openedFiles[0]);
-                }
-            }
-        });
+        if (!openedFiles) return;
+        if (playIndex === openedFiles.length - 1) return;
+        setMusicPath(openedFiles[playIndex + 1]);
+        setPlayIndex(playIndex + 1);
     }
 
     let unListened: () => void;
@@ -132,14 +129,15 @@ function App() {
                     // repeat
                     if (sequenceType === 1) {
                         startPlayNext();
-                    // repeat one
+                        // repeat one
                     } else if (sequenceType === 2) {
                         repeatOnePlay();
-                    // random
+                        // random
                     } else {
                         if (openedFiles) {
                             const index = Math.floor(Math.random() * openedFiles.length);
                             setMusicPath(() => openedFiles[index]);
+                            setPlayIndex(index);
                         }
                     }
                 }
@@ -210,6 +208,7 @@ function App() {
         console.log(files);
         if (files) {
             setMusicPath(undefined);
+            setPlayIndex(-1);
             setOpenedFiles(files);
         }
     }
@@ -237,6 +236,7 @@ function App() {
             return;
         }
         setMusicPath(file);
+        setPlayIndex(openedFiles?.indexOf(file) || -1);
     }
 
     const changeSeq = () => {
@@ -252,10 +252,12 @@ function App() {
             if (musicPath) {
                 await stop();
                 setTimeout(async () => {
+                    console.log('可以了吗')
                     await start();
                 }, 200);
             }
         }
+
         changeState();
     }, [musicPath]);
 
@@ -285,97 +287,101 @@ function App() {
     }, []);
 
     return (
-        <main className="container">
-            <div className="play-container">
-                <div className="list-wrapper">
-                    <div className="toolbar">
-                        <OpenFileIcon onClick={openFile}/>
-                        <OpenFolderIcon onClick={openFolder}/>
+        <div className="flex flex-col w-full h-full m-0 p-0">
+            <header className="h-8 w-full text-center p-2 cursor-default text-gray-400 font-medium" data-tauri-drag-region="true">Anchor Player</header>
+            <main className="flex-1 flex flex-col p-4">
+                <div className="play-container">
+                    <div className="list-wrapper">
+                        <div className="toolbar">
+                            <OpenFileIcon onClick={openFile}/>
+                            <OpenFolderIcon onClick={openFolder}/>
+                        </div>
+                        <ul className="list">
+                            {openedFiles?.map((file, index) => (
+                                <li key={index} className={file === musicPath && play ? 'active' : ''}>
+                                    <div className="fileName">{file.split('/')[file.split('/').length - 1]}</div>
+                                    <div className="statusIcon" onClick={() => changeMusic(file)}>
+                                        {file === musicPath && play ? <StopIcon/> : <PlayIcon/>}
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
                     </div>
-                    <ul className="list">
-                        {openedFiles?.map((file, index) => (
-                            <li key={index} className={file === musicPath && play ? 'active' : ''}>
-                                <div className="fileName">{file.split('/')[file.split('/').length - 1]}</div>
-                                <div className="statusIcon" onClick={() => changeMusic(file)}>
-                                    {file === musicPath && play ? <StopIcon/> : <PlayIcon/>}
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-                <div className="play-wrapper">
-                    <div className="title-wrapper">
-                        <div className="title">{musicMeta?.title}</div>
-                        <div className="artist">{musicMeta?.artist}</div>
-                        <div className="album">{musicMeta?.album}</div>
-                    </div>
-                    <div className="img-container">
-                        <div className={play ? "img-wrapper rotate" : "img-wrapper"} >
-                            {musicImage?.image ? (<img src={musicImage.image} className="logo" alt="music" />) : (<img src={bg} className="logo" alt="music" />)}
+                    <div className="play-wrapper">
+                        <div className="title-wrapper">
+                            <div className="title">{musicMeta?.title}</div>
+                            <div className="artist">{musicMeta?.artist}</div>
+                            <div className="album">{musicMeta?.album}</div>
+                        </div>
+                        <div className="img-container">
+                            <div className={play ? "img-wrapper rotate" : "img-wrapper"}>
+                                {musicImage?.image ? (<img src={musicImage.image} className="logo" alt="music"/>) : (
+                                    <img src={bg} className="logo" alt="music"/>)}
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-            <div className="bottom-container">
-                <div
-                    className="progress-bar-container"
-                    onClick={(e) => {
-                        const container = e.currentTarget;
-                        const rect = container.getBoundingClientRect();
-                        const x = e.clientX - rect.left;
-                        const percentage = (x / rect.width) * 100;
-
-                        const durationSeconds = timeToSeconds(music?.duration || "0:00:00.0");
-                        const newTime = (percentage / 100) * durationSeconds;
-
-                        // Invoke your Rust function to seek to the new position
-                        invoke("seek", {position: newTime}).catch(console.error);
-                    }}
-                >
+                <div className="bottom-container">
                     <div
-                        className="progress-bar"
-                        style={{width: `${calculateProgress(music?.progress, music?.duration)}%`}}
-                    />
+                        className="progress-bar-container"
+                        onClick={(e) => {
+                            const container = e.currentTarget;
+                            const rect = container.getBoundingClientRect();
+                            const x = e.clientX - rect.left;
+                            const percentage = (x / rect.width) * 100;
+
+                            const durationSeconds = timeToSeconds(music?.duration || "0:00:00.0");
+                            const newTime = (percentage / 100) * durationSeconds;
+
+                            // Invoke your Rust function to seek to the new position
+                            invoke("seek", {position: newTime}).catch(console.error);
+                        }}
+                    >
+                        <div
+                            className="progress-bar"
+                            style={{width: `${calculateProgress(music?.progress, music?.duration)}%`}}
+                        />
+                    </div>
+                    <div className="play-bar-container">
+                        <div className="time-container">
+                            <div className="time-wrapper">
+                                <div className="progress">{music?.progress ? music.progress : '0:00:00.0'}</div>
+                                &nbsp;/&nbsp;
+                                <div className="duration">{music?.duration ? music.duration : '0:00:00.0'}</div>
+                            </div>
+                            <div className="seq-wrapper" onClick={changeSeq}>
+                                {sequenceType === 1 && <RepeatIcon/>}
+                                {sequenceType === 2 && <RepeatOneIcon/>}
+                                {sequenceType === 3 && <RandomIcon/>}
+                            </div>
+                        </div>
+                        <div className="btn">
+                            <div className="previous" onClick={() => startPlayPrevious()}>
+                                <PreviousIcon/>
+                            </div>
+                            <div className="play" onClick={playManagement}>
+                                {play ? <StopIcon size={60}/> : <PlayIcon size={60}/>}
+                            </div>
+                            <div className="next" onClick={() => startPlayNext()}>
+                                <NextIcon/>
+                            </div>
+                        </div>
+                        <div className="info-wrapper">
+                            <div className="short-info">
+                                <div>{musicInfo?.codec_short}</div>
+                                <div>{musicInfo?.sample_rate && `${musicInfo?.sample_rate}Hz`}</div>
+                                <div>{musicInfo?.bits_per_sample && `${musicInfo?.bits_per_sample}bit`}</div>
+                            </div>
+                            <div className="info" onClick={() => setInfoDisplay(!infoDisplay)}>
+                                <InfoIcon/>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div className="play-bar-container">
-                    <div className="time-container">
-                        <div className="time-wrapper">
-                            <div className="progress">{music?.progress ? music.progress : '0:00:00.0'}</div>
-                            &nbsp;/&nbsp;
-                            <div className="duration">{music?.duration ? music.duration : '0:00:00.0'}</div>
-                        </div>
-                        <div className="seq-wrapper" onClick={changeSeq}>
-                            {sequenceType === 1 && <RepeatIcon/>}
-                            {sequenceType === 2 && <RepeatOneIcon/>}
-                            {sequenceType === 3 && <RandomIcon/>}
-                        </div>
-                    </div>
-                    <div className="btn">
-                        <div className="prevous" onClick={() => startPlayPrevious()}>
-                            <PreviousIcon/>
-                        </div>
-                        <div className="play" onClick={playManagement}>
-                            {play ? <StopIcon size={60}/> : <PlayIcon size={60}/>}
-                        </div>
-                        <div className="next" onClick={() => startPlayNext()}>
-                            <NextIcon/>
-                        </div>
-                    </div>
-                    <div className="info-wrapper">
-                        <div className="short-info">
-                            <div>{musicInfo?.codec_short}</div>
-                            <div>{musicInfo?.sample_rate && `${musicInfo?.sample_rate}Hz`}</div>
-                            <div>{musicInfo?.bits_per_sample && `${musicInfo?.bits_per_sample}bit`}</div>
-                        </div>
-                        <div className="info" onClick={() => setInfoDisplay(!infoDisplay)}>
-                            <InfoIcon/>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <Info onClick={() => setInfoDisplay(false)} musicInfo={musicInfo}
-                  className={infoDisplay ? "music-info" : "music-info hide"}/>
-        </main>
+                <Info onClick={() => setInfoDisplay(false)} musicInfo={musicInfo}
+                      className={infoDisplay ? "music-info" : "music-info hide"}/>
+            </main>
+        </div>
     );
 }
 

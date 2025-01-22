@@ -75,60 +75,6 @@ fn pause() {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
-            let win_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
-                .title("Anchor Player")
-                .inner_size(1024.0, 600.0);
-
-            // set transparent title bar only when building for macOS
-            #[cfg(target_os = "macos")]
-            let win_builder = win_builder.title_bar_style(TitleBarStyle::Transparent);
-
-            let window = win_builder.build().unwrap();
-
-            // set background color only when building for macOS
-            #[cfg(target_os = "macos")]
-            {
-                use cocoa::appkit::{NSColor, NSWindow};
-                use cocoa::base::{id, nil};
-                use objc::{msg_send, sel, sel_impl};
-
-                let ns_window = window.ns_window().unwrap() as id;
-                unsafe {
-                    let app: id = msg_send![class!(NSApplication), sharedApplication];
-                    let appearance: id = msg_send![app, effectiveAppearance];
-                    let name: id = msg_send![appearance, name];
-
-                    // Get selector for dark aqua appearance
-                    let dark_aqua: id = msg_send![class!(NSString), stringWithUTF8String: "NSAppearanceNameDarkAqua\0".as_ptr()];
-                    let is_dark: bool = msg_send![name, isEqualToString: dark_aqua];
-
-                    let bg_color = if is_dark {
-                        // Dark mode color
-                        NSColor::colorWithRed_green_blue_alpha_(
-                            nil,
-                            27.0 / 255.0,
-                            27.0 / 255.0,
-                            27.0 / 255.0,
-                            1.0,
-                        )
-                    } else {
-                        // Light mode color
-                        NSColor::colorWithRed_green_blue_alpha_(
-                            nil,
-                            222.0 / 255.0,
-                            227.0 / 255.0,
-                            232.0 / 255.0,
-                            1.0,
-                        )
-                    };
-
-                    ns_window.setBackgroundColor_(bg_color);
-                }
-            }
-
-            Ok(())
-        })
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![play, pause])
         .run(tauri::generate_context!())

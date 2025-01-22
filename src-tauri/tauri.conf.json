@@ -11,6 +11,12 @@
   },
   "app": {
     "windows": [
+      {
+        "title": "",
+        "titleBarStyle": "Overlay",
+        "width": 1024,
+        "height": 768
+      }
     ],
     "security": {
       "csp": null
