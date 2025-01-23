@@ -8,7 +8,24 @@
     }
 }
 
-html, body {
+@keyframes scroll-text {
+
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+
+    50% {
+        transform: translateX(calc(-100% + 200px));
+    }
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
     width: 100%;
     height: 100%;
     margin: 0;
@@ -66,6 +83,7 @@ html, body {
 }
 
 .play-container {
+    height: 0;
     flex: 1;
     display: flex;
     justify-content: center;
@@ -73,9 +91,9 @@ html, body {
 }
 
 .list-wrapper {
+    display: flex;
     width: 20em;
     text-align: left;
-    display: flex;
     flex-direction: column;
     background-color: #f6f6f6;
     padding: 1em;
@@ -270,15 +288,22 @@ button {
 }
 
 .list {
+    display: block;
     padding: 0;
     margin: .5em 0 0;
+    overflow-y: auto;
+    height: 100%;
+    flex: 1;
 }
 
 .list > li {
+    user-select: none;
+    height: 3em;
+    line-height: 3em;
     list-style: none;
     padding: .5em;
     display: flex;
-    justify-content: space-between;
+    justify-content: start;
     align-items: center;
     border-bottom: 1px solid #e8e8e8;
 }
@@ -287,8 +312,23 @@ button {
     /*background-color: #dee3e8;*/
 }
 
-.fileName {
+.file-name {
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    padding-right: 1em;
+}
 
+.file-name:hover {
+    text-overflow: clip;
+    animation: scroll-text 6s linear infinite;
+}
+
+@supports (-webkit-hyphens: none) {
+    .file-name:hover:not(:only-child) {
+        animation: none;
+    }
 }
 
 .statusIcon {

@@ -7,13 +7,13 @@ use std::{
 use crate::music::{Music, MusicImage, MusicMeta};
 use log::error;
 use music::MusicInfo;
-use objc::class;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
 
 mod music;
 mod output;
 mod player;
+mod file_reader;
 #[cfg(not(target_os = "linux"))]
 mod resampler;
 
@@ -71,12 +71,21 @@ fn pause() {
     player::pause();
 }
 
+#[tauri::command]
+fn list_files(dirs: Vec<String>) -> Vec<String> {
+    let files = file_reader::read_directory_files(dirs).unwrap_or_else(|err| {
+        error!("{}", err.to_string().to_lowercase());
+        Vec::new()
+    });
+    files
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![play, pause])
+        .invoke_handler(tauri::generate_handler![play, pause, list_files])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
