@@ -9,6 +9,7 @@ import AlbumIcon from "./album-icon.tsx";
 import RepeatIcon from "./repeat-icon.tsx";
 import RepeatOneIcon from "./repeat-one-icon.tsx";
 import RandomIcon from "./random-icon.tsx";
+import DeleteIcon from "./delete-icon.tsx";
 
 export {
     PlayIcon,
@@ -21,5 +22,6 @@ export {
     AlbumIcon,
     RepeatIcon,
     RepeatOneIcon,
-    RandomIcon
+    RandomIcon,
+    DeleteIcon,
 }
