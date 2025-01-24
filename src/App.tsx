@@ -364,7 +364,7 @@ function App() {
             </div>
             <ul className="list">
               {openedFiles?.map((file, index) => (
-                <li key={index} className={play && index === playIndex ? 'active' : ''}>
+                <li key={index} className={(play && index === playIndex) && 'active' || ''}>
                   <div
                     onDoubleClick={() => changeMusic(index)}
                     className="file-name cursor-default">{file.split('/')[file.split('/').length - 1]}</div>

@@ -1,14 +1,13 @@
 use mpsc::channel;
 use std::{
-    sync::mpsc::{self, Receiver},
+    sync::mpsc::{self},
     thread,
 };
 
 use crate::music::{Music, MusicImage, MusicMeta};
 use log::error;
 use music::MusicInfo;
-use serde::Serialize;
-use tauri::{AppHandle, Emitter, TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter};
 
 mod file_reader;
 mod music;
@@ -93,6 +92,13 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             play, pause, list_files, set_volume
         ])
+        // .setup(|app| {
+        //     #[cfg(target_os = "macos")]
+        //     {
+        //         app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+        //     }
+        //     Ok(())
+        // })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
