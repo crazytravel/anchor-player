@@ -34,12 +34,12 @@ use symphonia::core::probe::{Hint, ProbeResult};
 use symphonia::core::units::{Time, TimeBase};
 
 use crate::music::{Music, MusicImage, MusicMeta};
+use crate::output::AudioOutput;
 use crate::resampler;
 use crate::{music, output};
 use clap::{Arg, ArgMatches};
 use log::{error, info, warn};
 use music::MusicInfo;
-use crate::output::AudioOutput;
 
 pub static PAUSED: AtomicBool = AtomicBool::new(false);
 enum SeekPosition {

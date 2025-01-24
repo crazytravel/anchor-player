@@ -1,18 +1,14 @@
-// Symphonia
-// Copyright (c) 2019-2022 The Project Symphonia Developers.
-//
-// This Source Code Form is subject to the terms of the Mozilla Public
-// License, v. 2.0. If a copy of the MPL was not distributed with this
-// file, You can obtain one at https://mozilla.org/MPL/2.0/.
-
 //! Platform-dependant Audio Outputs
 
 use crate::player::PAUSED;
+use atomic_float::AtomicF32;
+use rb::*;
 use std::result;
 use std::sync::atomic::Ordering;
-use log::error;
 use symphonia::core::audio::{AudioBufferRef, SignalSpec};
 use symphonia::core::units::Duration;
+
+pub static VOLUME: AtomicF32 = AtomicF32::new(1.0);
 
 pub trait AudioOutput {
     fn write(&mut self, decoded: AudioBufferRef<'_>) -> Result<()>;
@@ -30,173 +26,30 @@ pub enum AudioOutputError {
 
 pub type Result<T> = result::Result<T, AudioOutputError>;
 
-#[cfg(target_os = "linux")]
-mod pulseaudio {
-    use super::{AudioOutput, AudioOutputError, Result};
-    use crate::player::PAUSED;
+pub fn try_pause() {
+    PAUSED.store(true, Ordering::SeqCst);
+}
 
-    use symphonia::core::audio::*;
-    use symphonia::core::units::Duration;
-
-    use libpulse_binding as pulse;
-    use libpulse_simple_binding as psimple;
-
-    use log::{error, warn};
-
-    pub struct PulseAudioOutput {
-        pa: psimple::Simple,
-        sample_buf: RawSampleBuffer<f32>,
-    }
-
-    impl PulseAudioOutput {
-        pub fn try_open(spec: SignalSpec, duration: Duration) -> Result<Box<dyn AudioOutput>> {
-            // An interleaved buffer is required to send data to PulseAudio. Use a SampleBuffer to
-            // move data between Symphonia AudioBuffers and the byte buffers required by PulseAudio.
-            let sample_buf = RawSampleBuffer::<f32>::new(duration, spec);
-
-            // Create a PulseAudio stream specification.
-            let pa_spec = pulse::sample::Spec {
-                format: pulse::sample::Format::FLOAT32NE,
-                channels: spec.channels.count() as u8,
-                rate: spec.rate,
-            };
-
-            assert!(pa_spec.is_valid());
-
-            let pa_ch_map = map_channels_to_pa_channelmap(spec.channels);
-
-            // PulseAudio seems to not play very short audio buffers, use these custom buffer
-            // attributes for very short audio streams.
-            //
-            // let pa_buf_attr = pulse::def::BufferAttr {
-            //     maxlength: u32::MAX,
-            //     tlength: 1024,
-            //     prebuf: u32::MAX,
-            //     minreq: u32::MAX,
-            //     fragsize: u32::MAX,
-            // };
-
-            // Create a PulseAudio connection.
-            let pa_result = psimple::Simple::new(
-                None,                               // Use default server
-                "Symphonia Player",                 // Application name
-                pulse::stream::Direction::Playback, // Playback stream
-                None,                               // Default playback device
-                "Music",                            // Description of the stream
-                &pa_spec,                           // Signal specification
-                pa_ch_map.as_ref(),                 // Channel map
-                None,                               // Custom buffering attributes
-            );
-
-            match pa_result {
-                Ok(pa) => Ok(Box::new(PulseAudioOutput { pa, sample_buf })),
-                Err(err) => {
-                    error!("audio output stream open error: {}", err);
-
-                    Err(AudioOutputError::OpenStreamError)
-                }
-            }
-        }
-
-        fn handle_stream_state(&self) {
-            if PAUSED.load(Ordering::SeqCst) {
-                let _ = self.pa.drain();
-            }
-        }
-    }
-
-    impl AudioOutput for PulseAudioOutput {
-        fn write(&mut self, decoded: AudioBufferRef<'_>) -> Result<()> {
-            // Do nothing if there are no audio frames.
-            if decoded.frames() == 0 {
-                return Ok(());
-            }
-
-            self.handle_stream_state();
-
-            // If paused, just return without writing
-            if PAUSED.load(Ordering::SeqCst) {
-                return Ok(());
-            }
-
-            // Interleave samples from the audio buffer into the sample buffer.
-            self.sample_buf.copy_interleaved_ref(decoded);
-
-            // Write interleaved samples to PulseAudio.
-            match self.pa.write(self.sample_buf.as_bytes()) {
-                Err(err) => {
-                    error!("audio output stream write error: {}", err);
-
-                    Err(AudioOutputError::StreamClosedError)
-                }
-                _ => Ok(()),
-            }
-        }
-
-        fn flush(&mut self) {
-            // Flush is best-effort, ignore the returned result.
-            let _ = self.pa.drain();
-        }
-    }
-
-    /// Maps a set of Symphonia `Channels` to a PulseAudio channel map.
-    fn map_channels_to_pa_channelmap(channels: Channels) -> Option<pulse::channelmap::Map> {
-        let mut map: pulse::channelmap::Map = Default::default();
-        map.init();
-        map.set_len(channels.count() as u8);
-
-        let is_mono = channels.count() == 1;
-
-        for (i, channel) in channels.iter().enumerate() {
-            map.get_mut()[i] = match channel {
-                Channels::FRONT_LEFT if is_mono => pulse::channelmap::Position::Mono,
-                Channels::FRONT_LEFT => pulse::channelmap::Position::FrontLeft,
-                Channels::FRONT_RIGHT => pulse::channelmap::Position::FrontRight,
-                Channels::FRONT_CENTRE => pulse::channelmap::Position::FrontCenter,
-                Channels::REAR_LEFT => pulse::channelmap::Position::RearLeft,
-                Channels::REAR_CENTRE => pulse::channelmap::Position::RearCenter,
-                Channels::REAR_RIGHT => pulse::channelmap::Position::RearRight,
-                Channels::LFE1 => pulse::channelmap::Position::Lfe,
-                Channels::FRONT_LEFT_CENTRE => pulse::channelmap::Position::FrontLeftOfCenter,
-                Channels::FRONT_RIGHT_CENTRE => pulse::channelmap::Position::FrontRightOfCenter,
-                Channels::SIDE_LEFT => pulse::channelmap::Position::SideLeft,
-                Channels::SIDE_RIGHT => pulse::channelmap::Position::SideRight,
-                Channels::TOP_CENTRE => pulse::channelmap::Position::TopCenter,
-                Channels::TOP_FRONT_LEFT => pulse::channelmap::Position::TopFrontLeft,
-                Channels::TOP_FRONT_CENTRE => pulse::channelmap::Position::TopFrontCenter,
-                Channels::TOP_FRONT_RIGHT => pulse::channelmap::Position::TopFrontRight,
-                Channels::TOP_REAR_LEFT => pulse::channelmap::Position::TopRearLeft,
-                Channels::TOP_REAR_CENTRE => pulse::channelmap::Position::TopRearCenter,
-                Channels::TOP_REAR_RIGHT => pulse::channelmap::Position::TopRearRight,
-                _ => {
-                    // If a Symphonia channel cannot map to a PulseAudio position then return None
-                    // because PulseAudio will not be able to open a stream with invalid channels.
-                    warn!("failed to map channel {:?} to output", channel);
-                    return None;
-                }
-            }
-        }
-
-        Some(map)
-    }
+pub fn set_volume(volume: f32) {
+    let clamped = volume.clamp(0.0, 1.0);
+    VOLUME.store(clamped, Ordering::SeqCst);
 }
 
 #[cfg(not(target_os = "linux"))]
-mod cpal {
+mod capal {
+    use super::Result;
     use crate::resampler::Resampler;
     use std::sync::atomic::Ordering;
-
-    use super::{AudioOutput, AudioOutputError, Result};
 
     use symphonia::core::audio::{AudioBufferRef, RawSample, SampleBuffer, SignalSpec};
     use symphonia::core::conv::{ConvertibleSample, IntoSample};
     use symphonia::core::units::Duration;
 
-    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-    use rb::*;
-
+    use crate::output::{AudioOutput, AudioOutputError, VOLUME};
     use crate::player::PAUSED;
+    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use log::{error, info};
+    use rb::*;
 
     pub struct CpalAudioOutput;
 
@@ -250,7 +103,7 @@ mod cpal {
     where
         T: AudioOutputSample,
     {
-        ring_buf_producer: rb::Producer<T>,
+        ring_buf_producer: Producer<T>,
         sample_buf: SampleBuffer<T>,
         stream: cpal::Stream,
         resampler: Option<Resampler<T>>,
@@ -361,19 +214,30 @@ mod cpal {
                 // Resampling is required. The resampler will return interleaved samples in the
                 // correct sample format.
                 match resampler.resample(decoded) {
-                    Some(resampled) => resampled,
+                    Some(resampled) => resampled.to_vec(),
                     None => return Ok(()),
                 }
             } else {
                 // Resampling is not required. Interleave the sample for cpal using a sample buffer.
                 self.sample_buf.copy_interleaved_ref(decoded);
-
-                self.sample_buf.samples()
+                self.sample_buf.samples().to_vec()
             };
 
+            // Apply volume
+            let volume = VOLUME.load(Ordering::SeqCst);
+            if volume != 1.0 {
+                for sample in samples.iter_mut() {
+                    let float_sample: f32 = (*sample).into_sample();
+                    *sample = (float_sample * volume).into_sample();
+                }
+            }
+
             // Write all samples to the ring buffer.
-            while let Some(written) = self.ring_buf_producer.write_blocking(samples) {
-                samples = &samples[written..];
+            while let Some(written) = self.ring_buf_producer.write_blocking(&samples) {
+                if written >= samples.len() {
+                    break;
+                }
+                samples = samples[written..].to_vec();
             }
 
             Ok(())
@@ -393,22 +257,184 @@ mod cpal {
             // Flush is best-effort, ignore the returned result.
             let _ = self.stream.pause();
         }
-
     }
+}
+
+#[cfg(target_os = "linux")]
+mod pulse {
+    use super::Result;
+    use std::sync::atomic::Ordering;
+
+    use symphonia::core::audio::*;
+    use symphonia::core::units::Duration;
+
+    use crate::output::output::{AudioOutput, AudioOutputError, VOLUME};
+    use crate::player::PAUSED;
+    use libpulse_binding as pulse;
+    use libpulse_simple_binding as psimple;
+
+    use log::{error, warn};
+
+    pub struct PulseAudioOutput {
+        pa: psimple::Simple,
+        sample_buf: RawSampleBuffer<f32>,
+    }
+
+    impl PulseAudioOutput {
+        pub fn try_open(spec: SignalSpec, duration: Duration) -> Result<Box<dyn AudioOutput>> {
+            // An interleaved buffer is required to send data to PulseAudio. Use a SampleBuffer to
+            // move data between Symphonia AudioBuffers and the byte buffers required by PulseAudio.
+            let sample_buf = RawSampleBuffer::<f32>::new(duration, spec);
+
+            // Create a PulseAudio stream specification.
+            let pa_spec = pulse::sample::Spec {
+                format: pulse::sample::Format::FLOAT32NE,
+                channels: spec.channels.count() as u8,
+                rate: spec.rate,
+            };
+
+            assert!(pa_spec.is_valid());
+
+            let pa_ch_map = map_channels_to_pa_channelmap(spec.channels);
+
+            // PulseAudio seems to not play very short audio buffers, use these custom buffer
+            // attributes for very short audio streams.
+            //
+            // let pa_buf_attr = pulse::def::BufferAttr {
+            //     maxlength: u32::MAX,
+            //     tlength: 1024,
+            //     prebuf: u32::MAX,
+            //     minreq: u32::MAX,
+            //     fragsize: u32::MAX,
+            // };
+
+            // Create a PulseAudio connection.
+            let pa_result = psimple::Simple::new(
+                None,                               // Use default server
+                "Anchor Player",                    // Application name
+                pulse::stream::Direction::Playback, // Playback stream
+                None,                               // Default playback device
+                "Music",                            // Description of the stream
+                &pa_spec,                           // Signal specification
+                pa_ch_map.as_ref(),                 // Channel map
+                None,                               // Custom buffering attributes
+            );
+
+            match pa_result {
+                Ok(pa) => Ok(Box::new(PulseAudioOutput { pa, sample_buf })),
+                Err(err) => {
+                    error!("audio output stream open error: {}", err);
+
+                    Err(AudioOutputError::OpenStreamError)
+                }
+            }
+        }
+
+        fn handle_stream_state(&self) {
+            if PAUSED.load(Ordering::SeqCst) {
+                let _ = self.pa.drain();
+            }
+        }
+    }
+
+    impl AudioOutput for PulseAudioOutput {
+        fn write(&mut self, decoded: AudioBufferRef<'_>) -> Result<()> {
+            // Do nothing if there are no audio frames.
+            if decoded.frames() == 0 {
+                return Ok(());
+            }
+
+            self.handle_stream_state();
+
+            // If paused, just return without writing
+            if PAUSED.load(Ordering::SeqCst) {
+                return Ok(());
+            }
+
+            // Interleave samples from the audio buffer into the sample buffer.
+            self.sample_buf.copy_interleaved_ref(decoded);
+
+            // Apply volume scaling.
+            let volume = VOLUME.load(Ordering::SeqCst);
+            if volume != 1.0 {
+                let samples = self.sample_buf.as_mut_byte_slice();
+                for sample in samples.chunks_exact_mut(4) {
+                    if let Ok(value) = sample.try_into() {
+                        let mut float_sample = f32::from_le_bytes(value);
+                        float_sample *= volume;
+                        sample.copy_from_slice(&float_sample.to_le_bytes());
+                    }
+                }
+            }
+
+            // Write interleaved samples to PulseAudio.
+            match self.pa.write(self.sample_buf.as_bytes()) {
+                Err(err) => {
+                    error!("audio output stream write error: {}", err);
+
+                    Err(AudioOutputError::StreamClosedError)
+                }
+                _ => Ok(()),
+            }
+        }
+
+        fn flush(&mut self) {
+            // Flush is best-effort, ignore the returned result.
+            let _ = self.pa.drain();
+        }
+    }
+
+    /// Maps a set of Symphonia `Channels` to a PulseAudio channel map.
+    fn map_channels_to_pa_channelmap(channels: Channels) -> Option<pulse::channelmap::Map> {
+        let mut map: pulse::channelmap::Map = Default::default();
+        map.init();
+        map.set_len(channels.count() as u8);
+
+        let is_mono = channels.count() == 1;
+
+        for (i, channel) in channels.iter().enumerate() {
+            map.get_mut()[i] = match channel {
+                Channels::FRONT_LEFT if is_mono => pulse::channelmap::Position::Mono,
+                Channels::FRONT_LEFT => pulse::channelmap::Position::FrontLeft,
+                Channels::FRONT_RIGHT => pulse::channelmap::Position::FrontRight,
+                Channels::FRONT_CENTRE => pulse::channelmap::Position::FrontCenter,
+                Channels::REAR_LEFT => pulse::channelmap::Position::RearLeft,
+                Channels::REAR_CENTRE => pulse::channelmap::Position::RearCenter,
+                Channels::REAR_RIGHT => pulse::channelmap::Position::RearRight,
+                Channels::LFE1 => pulse::channelmap::Position::Lfe,
+                Channels::FRONT_LEFT_CENTRE => pulse::channelmap::Position::FrontLeftOfCenter,
+                Channels::FRONT_RIGHT_CENTRE => pulse::channelmap::Position::FrontRightOfCenter,
+                Channels::SIDE_LEFT => pulse::channelmap::Position::SideLeft,
+                Channels::SIDE_RIGHT => pulse::channelmap::Position::SideRight,
+                Channels::TOP_CENTRE => pulse::channelmap::Position::TopCenter,
+                Channels::TOP_FRONT_LEFT => pulse::channelmap::Position::TopFrontLeft,
+                Channels::TOP_FRONT_CENTRE => pulse::channelmap::Position::TopFrontCenter,
+                Channels::TOP_FRONT_RIGHT => pulse::channelmap::Position::TopFrontRight,
+                Channels::TOP_REAR_LEFT => pulse::channelmap::Position::TopRearLeft,
+                Channels::TOP_REAR_CENTRE => pulse::channelmap::Position::TopRearCenter,
+                Channels::TOP_REAR_RIGHT => pulse::channelmap::Position::TopRearRight,
+                _ => {
+                    // If a Symphonia channel cannot map to a PulseAudio position then return None
+                    // because PulseAudio will not be able to open a stream with invalid channels.
+                    warn!("failed to map channel {:?} to output", channel);
+                    return None;
+                }
+            }
+        }
+
+        Some(map)
+    }
+}
+
+
+#[cfg(not(target_os = "linux"))]
+pub fn try_open(spec: SignalSpec, duration: Duration) -> Result<Box<dyn AudioOutput>> {
+    PAUSED.store(false, Ordering::SeqCst);
+    capal::CpalAudioOutput::try_open(spec, duration)
 }
 
 #[cfg(target_os = "linux")]
 pub fn try_open(spec: SignalSpec, duration: Duration) -> Result<Box<dyn AudioOutput>> {
     PAUSED.store(false, Ordering::SeqCst);
-    pulseaudio::PulseAudioOutput::try_open(spec, duration)
-}
-
-#[cfg(not(target_os = "linux"))]
-pub fn try_open(spec: SignalSpec, duration: Duration) -> Result<Box<dyn AudioOutput>> {
-    PAUSED.store(false, Ordering::SeqCst);
-    cpal::CpalAudioOutput::try_open(spec, duration)
-}
-
-pub fn try_pause() {
-    PAUSED.store(true, Ordering::SeqCst);
+    pulse::PulseAudioOutput::try_open(spec, duration)
 }

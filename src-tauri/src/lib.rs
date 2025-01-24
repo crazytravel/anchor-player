@@ -10,10 +10,10 @@ use music::MusicInfo;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
 
+mod file_reader;
 mod music;
 mod output;
 mod player;
-mod file_reader;
 #[cfg(not(target_os = "linux"))]
 mod resampler;
 
@@ -80,12 +80,19 @@ fn list_files(dirs: Vec<String>) -> Vec<String> {
     files
 }
 
+#[tauri::command]
+fn set_volume(volume: f32) {
+    output::set_volume(volume);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![play, pause, list_files])
+        .invoke_handler(tauri::generate_handler![
+            play, pause, list_files, set_volume
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
