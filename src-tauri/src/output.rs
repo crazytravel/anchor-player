@@ -2,7 +2,6 @@
 
 use crate::player::PAUSED;
 use atomic_float::AtomicF32;
-use rb::*;
 use std::result;
 use std::sync::atomic::Ordering;
 use symphonia::core::audio::{AudioBufferRef, SignalSpec};
@@ -425,7 +424,6 @@ mod pulse {
         Some(map)
     }
 }
-
 
 #[cfg(not(target_os = "linux"))]
 pub fn try_open(spec: SignalSpec, duration: Duration) -> Result<Box<dyn AudioOutput>> {
