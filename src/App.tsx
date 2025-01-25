@@ -1,13 +1,13 @@
-import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 
-import "./App.css";
+import './App.css';
 import bg from './assets/bg.png';
 
-import { listen } from "@tauri-apps/api/event";
-import { Music, MusicImage, MusicInfo, MusicMeta } from "./declare.ts";
-import Info from "./info";
+import { listen } from '@tauri-apps/api/event';
+import { Music, MusicImage, MusicInfo, MusicMeta } from './declare.ts';
+import Info from './info';
 import {
   InfoIcon,
   NextIcon,
@@ -24,33 +24,44 @@ import {
   VolumeHighIcon,
   VolumeLowIcon,
   VolumeMuteIcon,
-} from "./icon";
+} from './icon';
 
-const SEQUENCE_TYPES = {
-  REPEAT: 1,
-  REPEAT_ONE: 2,
-  RANDOM: 3,
-} as const;
+import { SUPPORTED_FORMATS, SEQUENCE_TYPES } from './constants';
+import { useMusicStore } from './store';
 
-const SUPPORTED_FORMATS = ['flac', 'mp3', 'wav', 'aac', 'ogg', 'riff', 'aiff', 'mkv', 'caf', 'mp4', 'm4a', 'mp2', 'alac', 'wma'];
 
 function App() {
-  const [musicInfo, setMusicInfo] = useState<MusicInfo>();
-  const [music, setMusic] = useState<Music>();
-  const [play, setPlay] = useState(false);
-  const [infoDisplay, setInfoDisplay] = useState(false);
-  const [musicMeta, setMusicMeta] = useState<MusicMeta>();
-  const [musicImage, setMusicImage] = useState<MusicImage>();
-  const [openedFiles, setOpenedFiles] = useState<string[]>();
-  const [musicPath, setMusicPath] = useState<string>();
-  const [sequenceType, setSequenceType] = useState<number>(SEQUENCE_TYPES.REPEAT);    // 1: repeat, 2: repeat one, 3: random
-  const [playIndex, setPlayIndex] = useState<number>(-1);
-  const [manuallyStop, setManuallyStop] = useState<boolean>(false);
 
-  const [volume, setVolume] = useState<number>(1); // 0 to 1
-  const [previousVolume, setPreviousVolume] = useState<number>(1);
-  const [isMuted, setIsMuted] = useState<boolean>(false);
-
+  const {
+    music,
+    musicInfo,
+    musicMeta,
+    musicImage,
+    musicPath,
+    play,
+    infoDisplay,
+    manuallyStopped,
+    openedFiles,
+    playIndex,
+    volume,
+    previousVolume,
+    isMuted,
+    sequenceType,
+    setMusic,
+    setMusicInfo,
+    setMusicMeta,
+    setMusicImage,
+    setMusicPath,
+    setPlay,
+    setInfoDisplay,
+    setManuallyStopped,
+    setOpenedFiles,
+    setPlayIndex,
+    setVolume,
+    setPreviousVolume,
+    setIsMuted,
+    setSequenceType
+  } = useMusicStore();
   // Add volume control functions
   const handleVolumeChange = async (newVolume: number) => {
     setVolume(newVolume);
@@ -93,15 +104,15 @@ function App() {
   };
 
   async function stop() {
-    setPlay(() => false);
-    calculateProgress("0:00:00.0", "0:00:00.0");
+    setPlay(false);
+    calculateProgress('0:00:00.0', '0:00:00.0');
     await invoke('pause');
   }
 
   async function playManagement() {
     if (!musicPath) {
       if (openedFiles && openedFiles.length > 0) {
-        setMusicPath(() => openedFiles[0]);
+        setMusicPath(openedFiles[0]);
         setPlayIndex(0);
       }
       return;
@@ -109,7 +120,7 @@ function App() {
     setMusicImage(undefined);
     setMusicMeta(undefined);
     if (play) {
-      setManuallyStop(true);
+      setManuallyStopped(true);
       await stop();
       return;
     }
@@ -123,16 +134,28 @@ function App() {
   }
 
   function startPlayPrevious() {
-    if (!openedFiles || playIndex <= 0) return;
-    const newIndex = playIndex - 1;
+    if (!openedFiles) return;
+    let newIndex: number;
+    if (playIndex === 0) {
+      newIndex = openedFiles.length - 1;
+    } else {
+      newIndex = playIndex - 1;
+    }
     setMusicPath(openedFiles[newIndex]);
     setPlayIndex(newIndex);
   }
 
   function startPlayNext() {
+    console.log('下一曲');
+    console.log('openedFiles', openedFiles);
     if (!openedFiles) return;
-    if (playIndex === openedFiles.length - 1) return;
-    const newIndex = playIndex + 1;
+    let newIndex: number;
+    if (playIndex === openedFiles.length - 1) {
+      newIndex = 0;
+    } else {
+      newIndex = playIndex + 1;
+    }
+    console.log('newIndex', newIndex);
     setMusicPath(openedFiles[newIndex]);
     setPlayIndex(newIndex);
   }
@@ -145,76 +168,86 @@ function App() {
 
   const setupListener = async () => {
     try {
-      unListened = await listen<MusicInfo>("music-info", (event) => {
+      unListened = await listen<MusicInfo>('music-info', (event) => {
         // console.log("Received event:", event.payload);
         setMusicInfo(event.payload);
       });
     } catch (error) {
-      console.error("Error setting up listener:", error);
+      console.error('Error setting up listener:', error);
     }
   };
 
   const setupProgressListener = async () => {
     try {
-      unListened = await listen<Music>("music", (event) => {
+      unListened = await listen<Music>('music', (event) => {
         // console.log("Received event:", event.payload);
         setMusic(event.payload);
         calculateProgress(event.payload.progress, event.payload.duration);
       });
     } catch (error) {
-      console.error("Error setting up listener:", error);
+      console.error('Error setting up listener:', error);
     }
   };
 
   const setupFinishedListener = async () => {
     try {
-      unListenedFinished = await listen<boolean>("finished", (event) => {
+      unListenedFinished = await listen<boolean>('finished', (event) => {
         if (event.payload) {
+          console.log('Finished event triggered');
+          console.log('Current openedFiles:', openedFiles);
+          console.log('Current playIndex:', playIndex);
+
           setPlay(false);
-          if (manuallyStop) {
-            setManuallyStop(false);
+          if (manuallyStopped) {
+            setManuallyStopped(false);
             return;
           }
+          console.log('sequenceType', sequenceType);
+          console.log('sequence type enum', SEQUENCE_TYPES.REPEAT);
+          console.log(
+            'sequenceType equals',
+            sequenceType === SEQUENCE_TYPES.REPEAT,
+          );
           // repeat
           if (sequenceType === SEQUENCE_TYPES.REPEAT) {
             startPlayNext();
             // repeat one
-          } else if (sequenceType === SEQUENCE_TYPES.REPEAT) {
+          } else if (sequenceType === SEQUENCE_TYPES.REPEAT_ONE) {
             repeatOnePlay();
             // random
           } else if (sequenceType === SEQUENCE_TYPES.RANDOM) {
             if (openedFiles) {
               const index = Math.floor(Math.random() * openedFiles.length);
-              setMusicPath(() => openedFiles[index]);
+              setMusicPath(openedFiles[index]);
               setPlayIndex(index);
             }
           }
         }
       });
     } catch (error) {
-      console.error("Error setting up listener:", error);
+      console.error('Error setting up listener:', error);
     }
   };
 
   const setupMetaListener = async () => {
     try {
-      unListenedMeta = await listen<MusicMeta>("music-meta", (event) => {
+      unListenedMeta = await listen<MusicMeta>('music-meta', (event) => {
         if (!event.payload.title) return;
         setMusicMeta(event.payload);
       });
     } catch (error) {
-      console.error("Error setting up listener:", error);
+      console.error('Error setting up listener:', error);
     }
   };
 
   const setupImageListener = async () => {
     try {
-      unListenedImage = await listen<MusicImage>("music-image", (event) => {
+      unListenedImage = await listen<MusicImage>('music-image', (event) => {
         // console.log("Received event:", event.payload);
         setMusicImage(event.payload);
       });
     } catch (error) {
-      console.error("Error setting up listener:", error);
+      console.error('Error setting up listener:', error);
     }
   };
 
@@ -249,18 +282,20 @@ function App() {
     const files = await open({
       multiple: true,
       directory: false,
-      filters: [{
-        extensions: SUPPORTED_FORMATS,
-        name: ""
-      }]
+      filters: [
+        {
+          extensions: SUPPORTED_FORMATS,
+          name: '',
+        },
+      ],
     });
     console.log(files);
     if (files) {
       setMusicPath(undefined);
-      setPlayIndex(-1);
-      setOpenedFiles(files);
+      setPlayIndex(0);
+      setOpenedFiles([...files]);
     }
-  }
+  };
 
   const openFolder = async () => {
     // when using `"withGlobalTauri": true`, you may use
@@ -276,11 +311,11 @@ function App() {
       const files = await invoke<string[]>('list_files', { dirs: paths });
       if (files.length > 0) {
         setMusicPath(undefined);
-        setPlayIndex(-1);
-        setOpenedFiles(files);
+        setPlayIndex(0);
+        setOpenedFiles([...files]);
       }
     }
-  }
+  };
 
   const changeMusic = async (index: number) => {
     if (!openedFiles) {
@@ -291,26 +326,24 @@ function App() {
     }
     setMusicPath(openedFiles[index]);
     setPlayIndex(index);
-  }
+  };
 
   const changeSeq = () => {
     if (sequenceType === 3) {
       setSequenceType(1);
     } else {
-      setSequenceType(sequenceType => sequenceType + 1);
+      setSequenceType(sequenceType + 1);
     }
-  }
+  };
 
   const deleteFromPlayList = (index: number) => {
-    setOpenedFiles((files) => {
-      if (!files) return files;
-      // Create a new array copy and then splice
-      const newFiles = [...files];
-      newFiles.splice(index, 1);
-      return newFiles;
-    });
+    if (!openedFiles) return openedFiles;
+    // Create a new array copy and then splice
+    const newFiles = [...openedFiles];
+    newFiles.splice(index, 1);
+    setOpenedFiles(newFiles);
     setMusicPath(undefined);
-  }
+  };
 
   useEffect(() => {
     async function changeState() {
@@ -347,13 +380,16 @@ function App() {
       if (unListenedImage) {
         unListenedImage();
       }
-    }
+    };
   }, []);
 
   return (
     <div className="flex flex-col w-full h-full m-0 p-0">
-      <header className="h-8 w-full text-center p-2 cursor-default app-name" data-tauri-drag-region="true">Anchor
-        Player
+      <header
+        className="h-8 w-full text-center p-2 cursor-default app-name"
+        data-tauri-drag-region="true"
+      >
+        Anchor Player
       </header>
       <main className="h-0 flex-1 flex flex-col p-4">
         <div className="play-container">
@@ -364,13 +400,26 @@ function App() {
             </div>
             <ul className="list">
               {openedFiles?.map((file, index) => (
-                <li key={index} className={(play && index === playIndex) && 'active' || ''}>
+                <li
+                  key={index}
+                  className={(play && index === playIndex && 'active') || ''}
+                >
                   <div
                     onDoubleClick={() => changeMusic(index)}
-                    className="file-name cursor-default">{file.split('/')[file.split('/').length - 1]}</div>
-                  <div className="statusIcon" onClick={() => deleteFromPlayList(index)}>
+                    className="file-name cursor-default"
+                  >
+                    {file.split('/')[file.split('/').length - 1]}
+                  </div>
+                  <div
+                    className="statusIcon"
+                    onClick={() => deleteFromPlayList(index)}
+                  >
                     {(playIndex != index || !play) && <DeleteIcon />}
-                    {(playIndex === index && play) && <span className="rotate"><AlbumIcon /></span>}
+                    {playIndex === index && play && (
+                      <span className="rotate">
+                        <AlbumIcon />
+                      </span>
+                    )}
                   </div>
                 </li>
               ))}
@@ -383,43 +432,57 @@ function App() {
               <div className="album">{musicMeta?.album}</div>
             </div>
             <div className="img-container">
-              <div className={play ? "img-wrapper rotate" : "img-wrapper"}>
-                {musicImage?.image ? (<img src={musicImage.image} className="logo" alt="music" />) : (
-                  <img src={bg} className="logo" alt="music" />)}
+              <div className={play ? 'img-wrapper rotate' : 'img-wrapper'}>
+                {musicImage?.image ? (
+                  <img src={musicImage.image} className="logo" alt="music" />
+                ) : (
+                  <img src={bg} className="logo" alt="music" />
+                )}
               </div>
             </div>
           </div>
         </div>
         <div className="bottom-container">
-          <div className="progress-bar-container"
+          <div
+            className="progress-bar-container"
             onClick={(e) => {
               const container = e.currentTarget;
               const rect = container.getBoundingClientRect();
               const x = e.clientX - rect.left;
               const percentage = (x / rect.width) * 100;
 
-              const durationSeconds = timeToSeconds(music?.duration || "0:00:00.0");
+              const durationSeconds = timeToSeconds(
+                music?.duration || '0:00:00.0',
+              );
               const newTime = (percentage / 100) * durationSeconds;
 
               // Invoke your Rust function to seek to the new position
-              invoke("seek", { position: newTime }).catch(console.error);
+              invoke('seek', { position: newTime }).catch(console.error);
             }}
           >
             <div
               className="progress-bar"
-              style={{ width: `${calculateProgress(music?.progress, music?.duration)}%` }}
+              style={{
+                width: `${calculateProgress(music?.progress, music?.duration)}%`,
+              }}
             />
           </div>
           <div className="play-bar-container">
             <div className="time-container">
               <div className="time-wrapper">
-                <div className="progress">{music?.progress ? music.progress : '0:00:00.0'}</div>
+                <div className="progress">
+                  {music?.progress ? music.progress : '0:00:00.0'}
+                </div>
                 &nbsp;/&nbsp;
-                <div className="duration">{music?.duration ? music.duration : '0:00:00.0'}</div>
+                <div className="duration">
+                  {music?.duration ? music.duration : '0:00:00.0'}
+                </div>
               </div>
               <div className="seq-wrapper" onClick={changeSeq}>
                 {sequenceType === SEQUENCE_TYPES.REPEAT && <RepeatIcon />}
-                {sequenceType === SEQUENCE_TYPES.REPEAT_ONE && <RepeatOneIcon />}
+                {sequenceType === SEQUENCE_TYPES.REPEAT_ONE && (
+                  <RepeatOneIcon />
+                )}
                 {sequenceType === SEQUENCE_TYPES.RANDOM && <RandomIcon />}
               </div>
             </div>
@@ -437,8 +500,13 @@ function App() {
             <div className="info-wrapper">
               <div className="short-info">
                 <div>{musicInfo?.codec_short}</div>
-                <div>{musicInfo?.sample_rate && `${musicInfo?.sample_rate}Hz`}</div>
-                <div>{musicInfo?.bits_per_sample && `${musicInfo?.bits_per_sample}bit`}</div>
+                <div>
+                  {musicInfo?.sample_rate && `${musicInfo?.sample_rate}Hz`}
+                </div>
+                <div>
+                  {musicInfo?.bits_per_sample &&
+                    `${musicInfo?.bits_per_sample}bit`}
+                </div>
               </div>
               <div className="volume-control">
                 <div className="volume-icon" onClick={toggleMute}>
@@ -457,17 +525,25 @@ function App() {
                   step="0.01"
                   value={volume}
                   className="volume-slider"
-                  onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                  onChange={(e) =>
+                    handleVolumeChange(parseFloat(e.target.value))
+                  }
                 />
               </div>
-              <div className="info" onClick={() => setInfoDisplay(!infoDisplay)}>
+              <div
+                className="info"
+                onClick={() => setInfoDisplay(!infoDisplay)}
+              >
                 <InfoIcon />
               </div>
             </div>
           </div>
         </div>
-        <Info onClick={() => setInfoDisplay(false)} musicInfo={musicInfo}
-          className={infoDisplay ? "music-info" : "music-info hide"} />
+        <Info
+          onClick={() => setInfoDisplay(false)}
+          musicInfo={musicInfo}
+          className={infoDisplay ? 'music-info' : 'music-info hide'}
+        />
       </main>
     </div>
   );
