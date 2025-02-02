@@ -12,10 +12,12 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "",
         "titleBarStyle": "Overlay",
-        "width": 1024,
-        "height": 768
+        "minWidth": 1024,
+        "minHeight": 768,
+        "visible": false
       }
     ],
     "security": {

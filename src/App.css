@@ -22,6 +22,16 @@
 
 * {
     box-sizing: border-box;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+img {
+    pointer-events: none;
 }
 
 html,
@@ -31,6 +41,7 @@ body {
     margin: 0;
     padding: 0;
     overflow: hidden;
+    background-color: #1F2A3D;
 }
 
 #root {
@@ -377,20 +388,4 @@ a:hover {
 
 .volume-slider::-moz-range-thumb:hover {
     background: #6AAEE7;
-}
-
-@media (prefers-color-scheme: dark) {
-    #root {
-        color: #f6f6f6;
-        background-color: #1b1b1b;
-        /*background-color: #1e1f22;*/
-    }
-
-    .list-wrapper {
-        background-color: #1f1f1f;
-    }
-
-    .title {
-        color: #888888;
-    }
 }

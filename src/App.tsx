@@ -244,6 +244,24 @@ function App() {
     await invoke('delete_from_playlist', { id: index });
   };
 
+  const seek = async (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!music || !music?.duration) {
+      return;
+    }
+    const container = e.currentTarget;
+    const rect = container.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const percentage = (x / rect.width) * 100;
+    const progressSeconds = timeToSeconds(
+      music?.progress || '0:00:00.0',
+    );
+    const durationSeconds = timeToSeconds(
+      music?.duration || '0:00:00.0',
+    );
+    const newTime = (percentage / 100) * (progressSeconds + durationSeconds);
+    await invoke('play', { id: -1, time: newTime }).catch(console.error);
+  }
+
   const formatTime = (time: string): string => {
     return time.split('.')[0];
   };
@@ -274,6 +292,12 @@ function App() {
       // console.log("Received event:", event.payload);
       setMusicImage(event.payload);
     });
+
+    const showWindow = async () => {
+      await invoke('show_main_window', {});
+    }
+
+    showWindow();
     return () => {
       unMusicInfoListen.then(f => f());
       unMusicListen.then(f => f());
@@ -283,13 +307,14 @@ function App() {
     }
   }, []);
 
+
   return (
     <div className="flex flex-col w-full h-full m-0 p-0">
       <header
         className="h-8 w-full text-center p-2 cursor-default app-name"
         data-tauri-drag-region="true"
       >
-        Anchor Player - HiFi Music Player
+        Anchor Player - Lossless Music Player
       </header>
       <main className="h-0 flex-1 flex flex-col p-4">
         <div className="play-container">
@@ -356,20 +381,7 @@ function App() {
         <div className="bottom-container">
           <div
             className="progress-bar-container"
-            onClick={(e) => {
-              const container = e.currentTarget;
-              const rect = container.getBoundingClientRect();
-              const x = e.clientX - rect.left;
-              const percentage = (x / rect.width) * 100;
-
-              const durationSeconds = timeToSeconds(
-                music?.duration || '0:00:00.0',
-              );
-              const newTime = (percentage / 100) * durationSeconds;
-
-              // Invoke your Rust function to seek to the new position
-              invoke('seek', { position: newTime }).catch(console.error);
-            }}
+            onClick={seek}
           >
             <div
               className="progress-bar"

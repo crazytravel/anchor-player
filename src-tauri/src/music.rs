@@ -90,18 +90,6 @@ impl MusicImage {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
-pub struct MusicState {
-    pub id: i32,
-    pub state: String,
-}
-
-impl MusicState {
-    pub fn new(id: i32, state: String) -> Self {
-        Self { id, state }
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MusicFile {
     pub id: i32,

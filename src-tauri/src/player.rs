@@ -23,13 +23,9 @@ use crate::{music, output, AppState};
 use log::{info, warn};
 use music::MusicInfo;
 
-enum SeekPosition {
-    Time(f64),
-    Timetamp(u64),
-}
-
 pub fn start_play(
     app: &AppHandle,
+    time_position: Option<Time>,
     music_path: &str,
     music: &Sender<Music>,
     music_info_tx: &Sender<MusicInfo>,
@@ -76,7 +72,7 @@ pub fn start_play(
 
             let tracks = probed.format.tracks();
             if !tracks.is_empty() {
-                for (idx, track) in tracks.iter().enumerate() {
+                for (_, track) in tracks.iter().enumerate() {
                     let params = &track.codec_params;
 
                     let mut music_info = MusicInfo::new();
@@ -135,15 +131,13 @@ pub fn start_play(
             }
             // Playback mode.
             print_format(&mut probed, music_meta_tx, app);
-            // If present, parse the seek argument.
-            let seek = None;
             // Set the decoder options.
             let decode_opts = Default::default();
             // Play it!
             play(
                 probed.format,
                 track,
-                seek,
+                time_position,
                 &decode_opts,
                 no_progress,
                 music,
@@ -204,7 +198,7 @@ struct PlayTrackOptions {
 fn play(
     mut reader: Box<dyn FormatReader>,
     track_num: Option<usize>,
-    seek: Option<SeekPosition>,
+    seek: Option<Time>,
     decode_opts: &DecoderOptions,
     no_progress: bool,
     music_tx: &Sender<Music>,
@@ -229,12 +223,9 @@ fn play(
     // decoded and *samples* discarded up-to the exact *sample* indicated by required_ts. The
     // current approach will discard excess samples if seeking to a sample within a packet.
     let seek_ts = if let Some(seek) = seek {
-        let seek_to = match seek {
-            SeekPosition::Time(t) => SeekTo::Time {
-                time: Time::from(t),
-                track_id: Some(track_id),
-            },
-            SeekPosition::Timetamp(ts) => SeekTo::TimeStamp { ts, track_id },
+        let seek_to = SeekTo::Time {
+            time: Time::from(seek),
+            track_id: Some(track_id),
         };
 
         // Attempt the seek. If the seek fails, ignore the error and return a seek timestamp of 0 so
@@ -420,6 +411,12 @@ fn play_track(
 
                                 duration = format!("{:}:{:0>2}:{:0>4.1}", hours, mins, secs);
                             }
+
+                            {
+                                let state_handle = app.state::<RwLock<AppState>>();
+                                let mut state = state_handle.write().unwrap();
+                                state.time_position = Some(t);
+                            }
                         }
                         music_tx
                             .send(Music::new(
@@ -497,7 +494,7 @@ fn dump_visual(visual: &Visual, music_image_tx: &Sender<MusicImage>) {
 
 fn dump_visuals(probed: &mut ProbeResult, music_image_tx: &Sender<MusicImage>) {
     if let Some(metadata) = probed.format.metadata().current() {
-        for (i, visual) in metadata.visuals().iter().enumerate() {
+        for (_, visual) in metadata.visuals().iter().enumerate() {
             dump_visual(visual, music_image_tx);
         }
 
@@ -507,7 +504,7 @@ fn dump_visuals(probed: &mut ProbeResult, music_image_tx: &Sender<MusicImage>) {
             info!("not dumping additional visuals that were found while probing.");
         }
     } else if let Some(metadata) = probed.metadata.get().as_ref().and_then(|m| m.current()) {
-        for (i, visual) in metadata.visuals().iter().enumerate() {
+        for (_, visual) in metadata.visuals().iter().enumerate() {
             dump_visual(visual, music_image_tx);
         }
     }

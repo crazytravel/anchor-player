@@ -6,6 +6,7 @@ use std::{
     },
     thread::{self},
 };
+use symphonia::core::units::Time;
 
 use crate::music::{Music, MusicImage, MusicMeta};
 use log::error;
@@ -26,7 +27,7 @@ pub struct AppState {
     pub volume: f32,
     pub music_files: Vec<MusicFile>,
     pub sequence_type: u32, // 1: repeat 2: repeat_one 3: random
-    pub time_position: f64,
+    pub time_position: Option<Time>,
 }
 
 impl AppState {
@@ -37,12 +38,12 @@ impl AppState {
             volume: 1.0,
             music_files: Vec::new(),
             sequence_type: 1,
-            time_position: 0.0,
+            time_position: None,
         }
     }
 }
 
-fn play_music(id: i32, app: AppHandle) {
+fn play_music(id: i32, position: Option<Time>, app: AppHandle) {
     {
         let state_handle = app.state::<RwLock<AppState>>();
         let mut state = state_handle.write().unwrap();
@@ -84,6 +85,7 @@ fn play_music(id: i32, app: AppHandle) {
         thread::spawn(move || {
             let code = player::start_play(
                 &app_player,
+                position,
                 path.as_str(),
                 &music_tx,
                 &music_info_tx,
@@ -100,7 +102,7 @@ fn play_music(id: i32, app: AppHandle) {
                 let next_id;
                 {
                     let state_handle = app.state::<RwLock<AppState>>();
-                    let state = state_handle.read().unwrap();
+                    let mut state = state_handle.write().unwrap();
                     if state.sequence_type == 2 {
                         next_id = id;
                     } else if state.sequence_type == 3 {
@@ -113,8 +115,9 @@ fn play_music(id: i32, app: AppHandle) {
                             0
                         };
                     }
+                    state.time_position = None;
                 }
-                play_music(next_id, cloned_app);
+                play_music(next_id, None, cloned_app);
             };
         });
         thread::spawn(move || {
@@ -148,12 +151,15 @@ fn set_music_files(music_files: Vec<MusicFile>, app: AppHandle) {
 }
 
 #[tauri::command]
-fn play(id: i32, app: AppHandle) {
+fn play(id: i32, time: Option<f64>, app: AppHandle) {
+    println!("id:{}", id);
+    println!("time:{:#?}", time);
     if id != -1 {
-        play_music(id, app);
+        play_music(id, None, app);
         return;
     }
     let current_id;
+    let position;
     {
         let cloned_app = app.clone();
         let state_handle = cloned_app.state::<RwLock<AppState>>();
@@ -163,8 +169,17 @@ fn play(id: i32, app: AppHandle) {
         } else {
             current_id = state.id;
         }
+        position = state.time_position;
     }
-    play_music(current_id, app);
+    if let Some(time) = time {
+        let integer_part = time.floor() as u64;
+        let fractional_part = time - integer_part as f64;
+        let time = Time::new(integer_part, fractional_part);
+        println!("time:{:#?}", time);
+        play_music(current_id, Some(time), app);
+        return;
+    }
+    play_music(current_id, position, app);
 }
 
 #[tauri::command]
@@ -173,15 +188,16 @@ fn play_next(app: AppHandle) {
     {
         let cloned_app = app.clone();
         let state_handle = cloned_app.state::<RwLock<AppState>>();
-        let state = state_handle.read().unwrap();
+        let mut state = state_handle.write().unwrap();
         let id = state.id;
         next_id = if id + 1 < state.music_files.len() as i32 {
             id + 1
         } else {
             0
         };
+        state.time_position = None;
     }
-    play_music(next_id, app);
+    play_music(next_id, Option::None, app);
 }
 
 #[tauri::command]
@@ -190,15 +206,16 @@ fn play_prevois(app: AppHandle) {
     {
         let cloned_app = app.clone();
         let state_handle = cloned_app.state::<RwLock<AppState>>();
-        let state = state_handle.read().unwrap();
+        let mut state = state_handle.write().unwrap();
         let id = state.id;
         prevois_id = if id - 1 >= 0 {
             id - 1
         } else {
             state.music_files.len() as i32 - 1
         };
+        state.time_position = None;
     }
-    play_music(prevois_id, app);
+    play_music(prevois_id, Option::None, app);
 }
 
 #[tauri::command]
@@ -252,6 +269,11 @@ fn delete_from_playlist(id: i32, app: AppHandle) {
     state.music_files.retain(|music_file| music_file.id != id);
 }
 
+#[tauri::command]
+fn show_main_window(window: tauri::Window) {
+    window.get_webview_window("main").unwrap().show().unwrap();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -268,7 +290,8 @@ pub fn run() {
             set_volume,
             get_current_music,
             change_sequence_type,
-            delete_from_playlist
+            delete_from_playlist,
+            show_main_window
         ])
         // .setup(|app| {
         //     #[cfg(target_os = "macos")]
