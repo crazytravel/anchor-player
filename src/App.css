@@ -109,7 +109,7 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
-    background-color: #222222;
+    background-color: #1D1D1D;
     will-change: filter;
     transition: 0.75s;
     filter: drop-shadow(0 0 2em #333333);
