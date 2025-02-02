@@ -147,13 +147,13 @@ fn play_music(id: i32, position: Option<Time>, app: AppHandle) {
 fn set_music_files(music_files: Vec<MusicFile>, app: AppHandle) {
     let state_handle = app.state::<RwLock<AppState>>();
     let mut state = state_handle.write().unwrap();
+    state.paused = true;
     state.music_files = music_files;
+    state.id = -1;
 }
 
 #[tauri::command]
 fn play(id: i32, time: Option<f64>, app: AppHandle) {
-    println!("id:{}", id);
-    println!("time:{:#?}", time);
     if id != -1 {
         play_music(id, None, app);
         return;
@@ -190,8 +190,20 @@ fn play_next(app: AppHandle) {
         let state_handle = cloned_app.state::<RwLock<AppState>>();
         let mut state = state_handle.write().unwrap();
         let id = state.id;
-        next_id = if id + 1 < state.music_files.len() as i32 {
-            id + 1
+        let index = match state
+            .music_files
+            .iter()
+            .position(|music_file| music_file.id == id)
+        {
+            Some(index) => index as i32,
+            None => -1,
+        };
+        let next_index = index + 1;
+        next_id = if next_index < state.music_files.len() as i32 {
+            match state.music_files.get(next_index as usize) {
+                Some(music_file) => music_file.id,
+                None => 0,
+            }
         } else {
             0
         };
@@ -208,8 +220,20 @@ fn play_prevois(app: AppHandle) {
         let state_handle = cloned_app.state::<RwLock<AppState>>();
         let mut state = state_handle.write().unwrap();
         let id = state.id;
-        prevois_id = if id - 1 >= 0 {
-            id - 1
+        let index = match state
+            .music_files
+            .iter()
+            .position(|music_file| music_file.id == id)
+        {
+            Some(index) => index as i32,
+            None => 0,
+        };
+        let prevois_index = index - 1;
+        prevois_id = if prevois_index >= 0 {
+            match state.music_files.get(prevois_index as usize) {
+                Some(music_file) => music_file.id,
+                None => 0,
+            }
         } else {
             state.music_files.len() as i32 - 1
         };
@@ -220,11 +244,9 @@ fn play_prevois(app: AppHandle) {
 
 #[tauri::command]
 fn pause(app: AppHandle) {
-    // player::pause(&app);
     let state_handle = app.state::<RwLock<AppState>>();
     let mut state = state_handle.write().unwrap();
     state.paused = true;
-    state.id = -1;
 }
 
 #[tauri::command]
@@ -267,6 +289,7 @@ fn delete_from_playlist(id: i32, app: AppHandle) {
     let state_handle = app.state::<RwLock<AppState>>();
     let mut state = state_handle.write().unwrap();
     state.music_files.retain(|music_file| music_file.id != id);
+    println!("music files:{:#?}", state.music_files);
 }
 
 #[tauri::command]

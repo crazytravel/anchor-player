@@ -41,6 +41,7 @@ function App() {
     play,
     infoDisplay,
     openedFiles,
+    musicList,
     volume,
     previousVolume,
     isMuted,
@@ -53,6 +54,7 @@ function App() {
     setPlay,
     setInfoDisplay,
     setOpenedFiles,
+    setMusicList,
     setVolume,
     setPreviousVolume,
     setIsMuted,
@@ -99,7 +101,6 @@ function App() {
 
   async function stop() {
     setPlay(false);
-    setId(-1);
     calculateProgress('0:00:00.0', '0:00:00.0');
     await invoke('pause');
   }
@@ -192,6 +193,10 @@ function App() {
       setOpenedFiles([...files]);
       const musicFiles = initFiles(files);
       console.log('music files:', musicFiles);
+      setPlay(false);
+      setId(-1);
+      setMusic(undefined);
+      setMusicList(musicFiles);
       await invoke('set_music_files', { musicFiles: musicFiles })
     }
   };
@@ -207,6 +212,10 @@ function App() {
       if (files.length > 0) {
         setOpenedFiles([...files]);
         const musicFiles = initFiles(files);
+        setPlay(false);
+        setId(-1);
+        setMusic(undefined);
+        setMusicList(musicFiles);
         await invoke('set_music_files', { musicFiles: musicFiles })
       }
     }
@@ -241,7 +250,11 @@ function App() {
     const newFiles = [...openedFiles];
     newFiles.splice(index, 1);
     setOpenedFiles(newFiles);
-    await invoke('delete_from_playlist', { id: index });
+    const newList = [...musicList];
+    const theId = newList[index].id;
+    newList.splice(index, 1);
+    setMusicList(newList);
+    await invoke('delete_from_playlist', { id: theId });
   };
 
   const seek = async (e: React.MouseEvent<HTMLDivElement>) => {
@@ -284,6 +297,7 @@ function App() {
     });
 
     const unListenedMeta = listen<MusicMeta>('music-meta', (event) => {
+      console.log('event from music-meta:', event.payload)
       if (!event.payload.title) return;
       setMusicMeta(event.payload);
     });
@@ -328,7 +342,7 @@ function App() {
               {openedFiles?.map((file, index) => (
                 <li
                   key={index}
-                  className={(play && index === id && 'active') || ''}
+                  className={(musicList[index].id === id && 'active') || ''}
                 >
                   <div
                     onDoubleClick={() => changeMusic(index)}
@@ -340,8 +354,8 @@ function App() {
                     className="statusIcon"
                     onClick={async () => deleteFromPlayList(index)}
                   >
-                    {(id != index || !play) && <DeleteIcon />}
-                    {id === index && play && (
+                    {(musicList[index].id !== id || !play) && <DeleteIcon />}
+                    {musicList[index].id === id && play && (
                       <span className="rotate">
                         <AlbumIcon />
                       </span>

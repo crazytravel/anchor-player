@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { SEQUENCE_TYPES } from './constants';
-import { Music, MusicImage, MusicInfo, MusicMeta } from './declare';
+import { Music, MusicFile, MusicImage, MusicInfo, MusicMeta } from './declare';
 
 type MusicStore = {
   id: number
@@ -11,6 +11,7 @@ type MusicStore = {
   play: boolean
   infoDisplay: boolean
   openedFiles: string[]
+  musicList: MusicFile[]
   volume: number
   previousVolume: number
   isMuted: boolean
@@ -24,6 +25,7 @@ type MusicStore = {
   setPlay: (play: boolean) => void
   setInfoDisplay: (infoDisplay: boolean) => void
   setOpenedFiles: (openedFiles: string[]) => void
+  setMusicList: (musicList: MusicFile[]) => void
   setVolume: (volume: number) => void
   setPreviousVolume: (previousVolume: number) => void
   setIsMuted: (isMuted: boolean) => void
@@ -39,6 +41,7 @@ export const useMusicStore = create<MusicStore>((set) => ({
   play: false,
   infoDisplay: false,
   openedFiles: [],
+  musicList: [],
   volume: 1, // 0 - 1
   previousVolume: 1,
   isMuted: false,
@@ -59,6 +62,9 @@ export const useMusicStore = create<MusicStore>((set) => ({
   }),
   setOpenedFiles: (openedFiles: string[]) => set(() => {
     return { openedFiles };
+  }),
+  setMusicList: (musicList: MusicFile[]) => set(() => {
+    return { musicList };
   }),
   setVolume: (volume: number) => set({ volume }),
   setPreviousVolume: (previousVolume: number) => set({ previousVolume }),

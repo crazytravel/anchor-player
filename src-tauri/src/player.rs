@@ -528,7 +528,15 @@ fn print_format(probed: &mut ProbeResult, music_meta_tx: &Sender<MusicMeta>, app
         {
             let state_handle = app.state::<RwLock<AppState>>();
             let state = state_handle.read().unwrap();
-            title = state.music_files[state.id as usize].name.clone();
+            let index = match state
+                .music_files
+                .iter()
+                .position(|music_file| music_file.id == state.id)
+            {
+                Some(index) => index,
+                None => 0,
+            };
+            title = state.music_files[index].name.clone();
         }
         let music_meta = MusicMeta::new(title);
         music_meta_tx
