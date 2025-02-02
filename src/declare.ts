@@ -17,6 +17,9 @@ interface MusicInfo {
 }
 
 interface Music {
+  id: number;
+  name: string;
+  path: string;
   duration: string;
   progress: string;
 }
@@ -31,4 +34,15 @@ interface MusicImage {
   image: string;
 }
 
-export type { MusicInfo, Music, MusicMeta, MusicImage };
+interface MusicFile {
+  id: number
+  name: string
+  path: string
+}
+
+interface MusicState {
+  id: number
+  state: 'FINISHED' | 'PLAYING' | 'PAUSED' | 'STOPPED'
+}
+
+export type { MusicInfo, Music, MusicMeta, MusicImage, MusicFile, MusicState };

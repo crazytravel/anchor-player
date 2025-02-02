@@ -1,13 +1,15 @@
+use std::sync::RwLock;
+
 use super::Result;
 use crate::resampler::Resampler;
-use std::sync::atomic::Ordering;
+use crate::AppState;
 
 use symphonia::core::audio::{AudioBufferRef, RawSample, SampleBuffer, SignalSpec};
 use symphonia::core::conv::{ConvertibleSample, IntoSample};
 use symphonia::core::units::Duration;
+use tauri::{AppHandle, Manager};
 
-use crate::output::{AudioOutput, AudioOutputError, VOLUME};
-use crate::player::PAUSED;
+use crate::output::{AudioOutput, AudioOutputError};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use log::{error, info};
 use rb::*;
@@ -148,8 +150,10 @@ impl<T: AudioOutputSample> CpalAudioOutputImpl<T> {
         }))
     }
 
-    fn handle_stream_state(&self) {
-        if PAUSED.load(Ordering::SeqCst) {
+    fn handle_stream_state(&self, app: &AppHandle) {
+        let state_handle = app.state::<RwLock<AppState>>();
+        let state = state_handle.read().unwrap();
+        if state.paused {
             let _ = self.stream.pause();
         } else {
             let _ = self.stream.play();
@@ -158,16 +162,18 @@ impl<T: AudioOutputSample> CpalAudioOutputImpl<T> {
 }
 
 impl<T: AudioOutputSample> AudioOutput for CpalAudioOutputImpl<T> {
-    fn write(&mut self, decoded: AudioBufferRef<'_>) -> Result<()> {
+    fn write(&mut self, decoded: AudioBufferRef<'_>, app: &AppHandle) -> Result<()> {
         // Do nothing if there are no audio frames.
         if decoded.frames() == 0 {
             return Ok(());
         }
 
-        self.handle_stream_state();
+        self.handle_stream_state(app);
 
         // If paused, just return without writing
-        if PAUSED.load(Ordering::SeqCst) {
+        let state_handle = app.state::<RwLock<AppState>>();
+        let state = state_handle.read().unwrap();
+        if state.paused {
             return Ok(());
         }
 
@@ -183,9 +189,10 @@ impl<T: AudioOutputSample> AudioOutput for CpalAudioOutputImpl<T> {
             self.sample_buf.copy_interleaved_ref(decoded);
             self.sample_buf.samples().to_vec()
         };
-
         // Apply volume
-        let volume = VOLUME.load(Ordering::SeqCst);
+        let state_handle = app.state::<RwLock<AppState>>();
+        let state = state_handle.read().unwrap();
+        let volume = state.volume;
         if volume != 1.0 {
             for sample in samples.iter_mut() {
                 let float_sample: f32 = (*sample).into_sample();
@@ -221,6 +228,5 @@ impl<T: AudioOutputSample> AudioOutput for CpalAudioOutputImpl<T> {
 }
 
 pub fn try_open(spec: SignalSpec, duration: Duration) -> Result<Box<dyn AudioOutput>> {
-    PAUSED.store(false, Ordering::SeqCst);
     CpalAudioOutput::try_open(spec, duration)
 }

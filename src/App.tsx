@@ -6,9 +6,11 @@ import './App.css';
 import bg from './assets/bg.png';
 
 import { listen } from '@tauri-apps/api/event';
-import { Music, MusicImage, MusicInfo, MusicMeta } from './declare.ts';
+import { Music, MusicFile, MusicImage, MusicInfo, MusicMeta } from './declare.ts';
 import Info from './info';
 import {
+  AlbumIcon,
+  DeleteIcon,
   InfoIcon,
   NextIcon,
   OpenFileIcon,
@@ -19,49 +21,44 @@ import {
   RepeatIcon,
   RepeatOneIcon,
   StopIcon,
-  DeleteIcon,
-  AlbumIcon,
   VolumeHighIcon,
   VolumeLowIcon,
   VolumeMuteIcon,
 } from './icon';
 
-import { SUPPORTED_FORMATS, SEQUENCE_TYPES } from './constants';
+import { SEQUENCE_TYPES, SUPPORTED_FORMATS } from './constants';
 import { useMusicStore } from './store';
 
 
 function App() {
 
   const {
+    id,
     music,
     musicInfo,
     musicMeta,
     musicImage,
-    musicPath,
     play,
     infoDisplay,
-    manuallyStopped,
     openedFiles,
-    playIndex,
     volume,
     previousVolume,
     isMuted,
     sequenceType,
+    setId,
     setMusic,
     setMusicInfo,
     setMusicMeta,
     setMusicImage,
-    setMusicPath,
     setPlay,
     setInfoDisplay,
-    setManuallyStopped,
     setOpenedFiles,
-    setPlayIndex,
     setVolume,
     setPreviousVolume,
     setIsMuted,
-    setSequenceType
+    setSequencType,
   } = useMusicStore();
+
   // Add volume control functions
   const handleVolumeChange = async (newVolume: number) => {
     setVolume(newVolume);
@@ -87,16 +84,13 @@ function App() {
     return parts[parts.length - 1].split('.')[0];
   };
 
-  const start = async () => {
+  const start = async (id: number) => {
     try {
-      if (musicPath) {
-        setPlay(true);
-        const musicName = extractMusicName(musicPath);
-        setMusicMeta({ title: musicName, artist: '', album: '' });
-        setMusicImage(undefined);
-        setMusicInfo(undefined);
-        await invoke('play', { musicPath });
-      }
+      setPlay(true);
+      setMusicImage(undefined);
+      setMusicInfo(undefined);
+      setId(id);
+      await invoke('play', { id });
     } catch (error) {
       console.error('Failed to start playback:', error);
       setPlay(false);
@@ -105,151 +99,49 @@ function App() {
 
   async function stop() {
     setPlay(false);
+    setId(-1);
     calculateProgress('0:00:00.0', '0:00:00.0');
     await invoke('pause');
   }
 
-  async function playManagement() {
-    if (!musicPath) {
-      if (openedFiles && openedFiles.length > 0) {
-        setMusicPath(openedFiles[0]);
-        setPlayIndex(0);
-      }
-      return;
-    }
-    setMusicImage(undefined);
-    setMusicMeta(undefined);
+  const finishPlay = async () => {
+  };
+
+  async function playControl() {
     if (play) {
-      setManuallyStopped(true);
       await stop();
       return;
     }
-    await start();
-  }
-
-  async function repeatOnePlay() {
-    if (musicPath) {
-      await start();
+    if (openedFiles && openedFiles.length > 0) {
+      await start(-1);
     }
   }
 
-  function startPlayPrevious() {
-    if (!openedFiles) return;
-    let newIndex: number;
-    if (playIndex === 0) {
-      newIndex = openedFiles.length - 1;
-    } else {
-      newIndex = playIndex - 1;
+  const playPrevious = async () => {
+    await invoke('play_prevois', {});
+  };
+
+  const playNext = async () => {
+    await invoke('play_next', {});
+  };
+
+  const startPlayPrevious = async () => {
+    if (!openedFiles || openedFiles.length <= 0) {
+      return;
     }
-    setMusicPath(openedFiles[newIndex]);
-    setPlayIndex(newIndex);
+    setPlay(true);
+    setMusicImage(undefined);
+    await playPrevious();
   }
 
-  function startPlayNext() {
-    console.log('下一曲');
-    console.log('openedFiles', openedFiles);
-    if (!openedFiles) return;
-    let newIndex: number;
-    if (playIndex === openedFiles.length - 1) {
-      newIndex = 0;
-    } else {
-      newIndex = playIndex + 1;
+  const startPlayNext = async () => {
+    if (!openedFiles || openedFiles.length <= 0) {
+      return;
     }
-    console.log('newIndex', newIndex);
-    setMusicPath(openedFiles[newIndex]);
-    setPlayIndex(newIndex);
+    setPlay(true);
+    setMusicImage(undefined);
+    await playNext();
   }
-
-  let unListened: () => void;
-  let unListenedProgress: () => void;
-  let unListenedFinished: () => void;
-  let unListenedMeta: () => void;
-  let unListenedImage: () => void;
-
-  const setupListener = async () => {
-    try {
-      unListened = await listen<MusicInfo>('music-info', (event) => {
-        // console.log("Received event:", event.payload);
-        setMusicInfo(event.payload);
-      });
-    } catch (error) {
-      console.error('Error setting up listener:', error);
-    }
-  };
-
-  const setupProgressListener = async () => {
-    try {
-      unListened = await listen<Music>('music', (event) => {
-        // console.log("Received event:", event.payload);
-        setMusic(event.payload);
-        calculateProgress(event.payload.progress, event.payload.duration);
-      });
-    } catch (error) {
-      console.error('Error setting up listener:', error);
-    }
-  };
-
-  const setupFinishedListener = async () => {
-    try {
-      unListenedFinished = await listen<boolean>('finished', (event) => {
-        if (event.payload) {
-          console.log('Finished event triggered');
-          console.log('Current openedFiles:', openedFiles);
-          console.log('Current playIndex:', playIndex);
-
-          setPlay(false);
-          if (manuallyStopped) {
-            setManuallyStopped(false);
-            return;
-          }
-          console.log('sequenceType', sequenceType);
-          console.log('sequence type enum', SEQUENCE_TYPES.REPEAT);
-          console.log(
-            'sequenceType equals',
-            sequenceType === SEQUENCE_TYPES.REPEAT,
-          );
-          // repeat
-          if (sequenceType === SEQUENCE_TYPES.REPEAT) {
-            startPlayNext();
-            // repeat one
-          } else if (sequenceType === SEQUENCE_TYPES.REPEAT_ONE) {
-            repeatOnePlay();
-            // random
-          } else if (sequenceType === SEQUENCE_TYPES.RANDOM) {
-            if (openedFiles) {
-              const index = Math.floor(Math.random() * openedFiles.length);
-              setMusicPath(openedFiles[index]);
-              setPlayIndex(index);
-            }
-          }
-        }
-      });
-    } catch (error) {
-      console.error('Error setting up listener:', error);
-    }
-  };
-
-  const setupMetaListener = async () => {
-    try {
-      unListenedMeta = await listen<MusicMeta>('music-meta', (event) => {
-        if (!event.payload.title) return;
-        setMusicMeta(event.payload);
-      });
-    } catch (error) {
-      console.error('Error setting up listener:', error);
-    }
-  };
-
-  const setupImageListener = async () => {
-    try {
-      unListenedImage = await listen<MusicImage>('music-image', (event) => {
-        // console.log("Received event:", event.payload);
-        setMusicImage(event.payload);
-      });
-    } catch (error) {
-      console.error('Error setting up listener:', error);
-    }
-  };
 
   const timeToSeconds = (timeStr: string): number => {
     const parts = timeStr.split(':');
@@ -277,6 +169,12 @@ function App() {
     return (progressSeconds / (progressSeconds + durationSeconds)) * 100;
   };
 
+  const initFiles = (files: string[]): MusicFile[] => {
+    return files.map((file, index) => {
+      return { id: index, name: extractMusicName(file), path: file }
+    })
+  }
+
   const openFile = async () => {
     // Open a dialog
     const files = await open({
@@ -291,17 +189,14 @@ function App() {
     });
     console.log(files);
     if (files) {
-      setMusicPath(undefined);
-      setPlayIndex(0);
       setOpenedFiles([...files]);
+      const musicFiles = initFiles(files);
+      console.log('music files:', musicFiles);
+      await invoke('set_music_files', { musicFiles: musicFiles })
     }
   };
 
   const openFolder = async () => {
-    // when using `"withGlobalTauri": true`, you may use
-    // const { open } = window.__TAURI__.dialog;
-
-    // Open a dialog
     const paths = await open({
       multiple: true,
       directory: true,
@@ -310,77 +205,82 @@ function App() {
     if (paths) {
       const files = await invoke<string[]>('list_files', { dirs: paths });
       if (files.length > 0) {
-        setMusicPath(undefined);
-        setPlayIndex(0);
         setOpenedFiles([...files]);
+        const musicFiles = initFiles(files);
+        await invoke('set_music_files', { musicFiles: musicFiles })
       }
     }
   };
 
+  const changeSequenceType = async () => {
+    if (sequenceType === SEQUENCE_TYPES.REPEAT) {
+      setSequencType(SEQUENCE_TYPES.REPEAT_ONE);
+      await invoke('change_sequence_type', { sequenceType: SEQUENCE_TYPES.REPEAT_ONE });
+      return;
+    }
+    if (sequenceType === SEQUENCE_TYPES.REPEAT_ONE) {
+      setSequencType(SEQUENCE_TYPES.RANDOM);
+      await invoke('change_sequence_type', { sequenceType: SEQUENCE_TYPES.RANDOM });
+      return;
+    }
+    if (sequenceType === SEQUENCE_TYPES.RANDOM) {
+      setSequencType(SEQUENCE_TYPES.REPEAT);
+      await invoke('change_sequence_type', { sequenceType: SEQUENCE_TYPES.REPEAT });
+      return;
+    }
+  }
+
   const changeMusic = async (index: number) => {
-    if (!openedFiles) {
+    if (!openedFiles || openedFiles.length === 0) {
       return;
     }
-    if (index === playIndex) {
-      return;
-    }
-    setMusicPath(openedFiles[index]);
-    setPlayIndex(index);
+    await start(index);
   };
 
-  const changeSeq = () => {
-    if (sequenceType === 3) {
-      setSequenceType(1);
-    } else {
-      setSequenceType(sequenceType + 1);
-    }
-  };
-
-  const deleteFromPlayList = (index: number) => {
-    if (!openedFiles) return openedFiles;
-    // Create a new array copy and then splice
+  const deleteFromPlayList = async (index: number) => {
     const newFiles = [...openedFiles];
     newFiles.splice(index, 1);
     setOpenedFiles(newFiles);
-    setMusicPath(undefined);
+    await invoke('delete_from_playlist', { id: index });
+  };
+
+  const formatTime = (time: string): string => {
+    return time.split('.')[0];
   };
 
   useEffect(() => {
-    async function changeState() {
-      if (musicPath) {
-        await stop();
-        setTimeout(async () => {
-          await start();
-        }, 200);
-      }
-    }
+    const unMusicInfoListen = listen<MusicInfo>('music-info', (event) => {
+      setMusicInfo(event.payload);
+    });
 
-    changeState();
-  }, [musicPath]);
+    const unMusicListen = listen<Music>('music', (event) => {
+      setId(event.payload.id);
+      setMusic(event.payload);
+      calculateProgress(event.payload.progress, event.payload.duration);
+    });
 
-  useEffect(() => {
-    setupListener();
-    setupProgressListener();
-    setupFinishedListener();
-    setupMetaListener();
-    setupImageListener();
+    const unFinishedListen = listen<number>('finished', async (event) => {
+      console.log('event from finished:', event.payload)
+      setMusicImage(undefined);
+      await finishPlay();
+    });
+
+    const unListenedMeta = listen<MusicMeta>('music-meta', (event) => {
+      if (!event.payload.title) return;
+      setMusicMeta(event.payload);
+    });
+
+    const unListenedImage = listen<MusicImage>('music-image', (event) => {
+      // console.log("Received event:", event.payload);
+      setMusicImage(event.payload);
+    });
     return () => {
-      if (unListened) {
-        unListened();
-      }
-      if (unListenedProgress) {
-        unListenedProgress();
-      }
-      if (unListenedFinished) {
-        unListenedFinished();
-      }
-      if (unListenedMeta) {
-        unListenedMeta();
-      }
-      if (unListenedImage) {
-        unListenedImage();
-      }
-    };
+      unMusicInfoListen.then(f => f());
+      unMusicListen.then(f => f());
+      unFinishedListen.then(f => f());
+      unListenedMeta.then(f => f());
+      unListenedImage.then(f => f());
+    }
   }, []);
 
   return (
@@ -389,20 +289,21 @@ function App() {
         className="h-8 w-full text-center p-2 cursor-default app-name"
         data-tauri-drag-region="true"
       >
-        Anchor Player
+        Anchor Player - HiFi Music Player
       </header>
       <main className="h-0 flex-1 flex flex-col p-4">
         <div className="play-container">
           <div className="list-wrapper">
             <div className="toolbar">
               <OpenFileIcon onClick={openFile} />
+              <div className="w-3" />
               <OpenFolderIcon onClick={openFolder} />
             </div>
             <ul className="list">
               {openedFiles?.map((file, index) => (
                 <li
                   key={index}
-                  className={(play && index === playIndex && 'active') || ''}
+                  className={(play && index === id && 'active') || ''}
                 >
                   <div
                     onDoubleClick={() => changeMusic(index)}
@@ -412,10 +313,10 @@ function App() {
                   </div>
                   <div
                     className="statusIcon"
-                    onClick={() => deleteFromPlayList(index)}
+                    onClick={async () => deleteFromPlayList(index)}
                   >
-                    {(playIndex != index || !play) && <DeleteIcon />}
-                    {playIndex === index && play && (
+                    {(id != index || !play) && <DeleteIcon />}
+                    {id === index && play && (
                       <span className="rotate">
                         <AlbumIcon />
                       </span>
@@ -438,6 +339,16 @@ function App() {
                 ) : (
                   <img src={bg} className="logo" alt="music" />
                 )}
+              </div>
+            </div>
+            <div className="short-info">
+              <div>{musicInfo?.codec_short}</div>
+              <div>
+                {musicInfo?.sample_rate && `${parseInt(musicInfo?.sample_rate) / 1000}kHz`}
+              </div>
+              <div>
+                {musicInfo?.bits_per_sample &&
+                  `${musicInfo?.bits_per_sample}bit`}
               </div>
             </div>
           </div>
@@ -471,14 +382,14 @@ function App() {
             <div className="time-container">
               <div className="time-wrapper">
                 <div className="progress">
-                  {music?.progress ? music.progress : '0:00:00.0'}
+                  {music?.progress ? formatTime(music.progress) : '0:00:00'}
                 </div>
                 &nbsp;/&nbsp;
                 <div className="duration">
-                  {music?.duration ? music.duration : '0:00:00.0'}
+                  {music?.duration ? formatTime(music.duration) : '0:00:00'}
                 </div>
               </div>
-              <div className="seq-wrapper" onClick={changeSeq}>
+              <div className="seq-wrapper" onClick={changeSequenceType}>
                 {sequenceType === SEQUENCE_TYPES.REPEAT && <RepeatIcon />}
                 {sequenceType === SEQUENCE_TYPES.REPEAT_ONE && (
                   <RepeatOneIcon />
@@ -490,7 +401,7 @@ function App() {
               <div className="previous" onClick={() => startPlayPrevious()}>
                 <PreviousIcon />
               </div>
-              <div className="play" onClick={playManagement}>
+              <div className="play" onClick={playControl}>
                 {play ? <StopIcon size={60} /> : <PlayIcon size={60} />}
               </div>
               <div className="next" onClick={() => startPlayNext()}>
@@ -498,18 +409,8 @@ function App() {
               </div>
             </div>
             <div className="info-wrapper">
-              <div className="short-info">
-                <div>{musicInfo?.codec_short}</div>
-                <div>
-                  {musicInfo?.sample_rate && `${musicInfo?.sample_rate}Hz`}
-                </div>
-                <div>
-                  {musicInfo?.bits_per_sample &&
-                    `${musicInfo?.bits_per_sample}bit`}
-                </div>
-              </div>
               <div className="volume-control">
-                <div className="volume-icon" onClick={toggleMute}>
+                <div className="icon" onClick={toggleMute}>
                   {volume === 0 || isMuted ? (
                     <VolumeMuteIcon />
                   ) : volume < 0.5 ? (
@@ -530,8 +431,7 @@ function App() {
                   }
                 />
               </div>
-              <div
-                className="info"
+              <div className="info"
                 onClick={() => setInfoDisplay(!infoDisplay)}
               >
                 <InfoIcon />
@@ -542,10 +442,10 @@ function App() {
         <Info
           onClick={() => setInfoDisplay(false)}
           musicInfo={musicInfo}
-          className={infoDisplay ? 'music-info' : 'music-info hide'}
+          className={infoDisplay ? 'music-info bg-quinary' : 'music-info bg-quinary hide'}
         />
-      </main>
-    </div>
+      </main >
+    </div >
   );
 }
 

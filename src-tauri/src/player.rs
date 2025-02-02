@@ -2,42 +2,34 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::needless_update)]
 
-use std::ffi::{OsStr, OsString};
-use std::fmt::{Debug, Formatter};
 use std::fs::File;
-use std::io::Write;
 use std::path::Path;
 use std::sync::mpsc::Sender;
+use std::sync::RwLock;
 
 use base64::engine::general_purpose;
 use base64::Engine;
-use lazy_static::lazy_static;
-use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use symphonia::core::codecs::{DecoderOptions, FinalizeResult, CODEC_TYPE_NULL};
 use symphonia::core::errors::{Error, Result};
-use symphonia::core::formats::{Cue, FormatOptions, FormatReader, SeekMode, SeekTo, Track};
+use symphonia::core::formats::{FormatReader, SeekMode, SeekTo, Track};
 use symphonia::core::io::{MediaSource, MediaSourceStream, ReadOnlySource};
-use symphonia::core::meta::{
-    ColorMode, MetadataOptions, MetadataRevision, StandardTagKey, Tag, Value, Visual,
-};
+use symphonia::core::meta::{MetadataOptions, MetadataRevision, StandardTagKey, Tag, Visual};
 use symphonia::core::probe::{Hint, ProbeResult};
 use symphonia::core::units::{Time, TimeBase};
+use tauri::{AppHandle, Manager};
 
 use crate::music::{Music, MusicImage, MusicMeta};
-use crate::output::AudioOutput;
-use crate::resampler;
-use crate::{music, output};
-use clap::{Arg, ArgMatches};
-use log::{error, info, warn};
+use crate::{music, output, AppState};
+use log::{info, warn};
 use music::MusicInfo;
 
-pub static PAUSED: AtomicBool = AtomicBool::new(false);
 enum SeekPosition {
     Time(f64),
     Timetamp(u64),
 }
 
 pub fn start_play(
+    app: &AppHandle,
     music_path: &str,
     music: &Sender<Music>,
     music_info_tx: &Sender<MusicInfo>,
@@ -80,13 +72,7 @@ pub fn start_play(
     // Probe the media source stream for metadata and get the format reader.
     match symphonia::default::get_probe().format(&hint, mss, &format_opts, &metadata_opts) {
         Ok(mut probed) => {
-            // Dump visuals if requested.
-            let name = match path.file_name() {
-                Some(name) if name != "-" => name,
-                _ => OsStr::new("NoName"),
-            };
-
-            dump_visuals(&mut probed, name, music_image_tx);
+            dump_visuals(&mut probed, music_image_tx);
 
             let tracks = probed.format.tracks();
             if !tracks.is_empty() {
@@ -148,7 +134,8 @@ pub fn start_play(
                 }
             }
             // Playback mode.
-            print_format(path, &mut probed, music_meta_tx);
+            print_format(&mut probed, music_meta_tx, app);
+            // If present, parse the seek argument.
             let seek = None;
             // Set the decoder options.
             let decode_opts = Default::default();
@@ -161,238 +148,8 @@ pub fn start_play(
                 no_progress,
                 music,
                 music_meta_tx,
+                app,
             )
-        }
-        Err(err) => {
-            // The input was not supported by any format reader.
-            info!("the input is not supported");
-            Err(err)
-        }
-    }
-}
-
-fn start_play1(
-    music_path: &str,
-    music_tx: &Sender<Music>,
-    music_meta_tx: &Sender<MusicMeta>,
-    music_image_tx: &Sender<MusicImage>,
-) {
-    pretty_env_logger::init();
-
-    let args = clap::Command::new("Symphonia Play")
-        .version("1.0")
-        .author("Philip Deljanov <philip.deljanov@gmail.com>")
-        .about("Play audio with Symphonia")
-        .arg(
-            clap::Arg::new("seek")
-                .long("seek")
-                .short('s')
-                .value_name("TIME")
-                .help("Seek to the time in seconds")
-                .conflicts_with_all(&[
-                    "seek-ts",
-                    "decode-only",
-                    "probe-only",
-                    "verify",
-                    "verify-only",
-                ])
-                .action(clap::ArgAction::Set),
-        )
-        .arg(
-            clap::Arg::new("seek-ts")
-                .long("seek-ts")
-                .short('S')
-                .value_name("TIMESTAMP")
-                .help("Seek to the timestamp in timebase units")
-                .conflicts_with_all(&["seek", "decode-only", "probe-only", "verify", "verify-only"])
-                .action(clap::ArgAction::Set),
-        )
-        .arg(
-            clap::Arg::new("track")
-                .long("track")
-                .short('t')
-                .value_name("TRACK")
-                .help("The track to use")
-                .action(clap::ArgAction::Set),
-        )
-        .arg(
-            clap::Arg::new("decode-only")
-                .long("decode-only")
-                .help("Decode, but do not play the audio")
-                .conflicts_with_all(&["probe-only", "verify-only", "verify"])
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            clap::Arg::new("probe-only")
-                .long("probe-only")
-                .help("Only probe the input for metadata")
-                .conflicts_with_all(&["decode-only", "verify-only"])
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            clap::Arg::new("verify-only")
-                .long("verify-only")
-                .help("Verify the decoded audio is valid, but do not play the audio")
-                .conflicts_with_all(&["verify"])
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            clap::Arg::new("verify")
-                .long("verify")
-                .short('v')
-                .help("Verify the decoded audio is valid during playback")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            clap::Arg::new("no-progress")
-                .long("no-progress")
-                .help("Do not display playback progress")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            clap::Arg::new("no-gapless")
-                .long("no-gapless")
-                .help("Disable gapless decoding and playback")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            clap::Arg::new("dump-visuals")
-                .long("dump-visuals")
-                .help("Dump all visuals to the current working directory")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            clap::Arg::new("INPUT")
-                .help("The input file path, or - to use standard input")
-                .required(true)
-                .index(1),
-        )
-        .get_matches();
-
-    // For any error, return an exit code -1. Otherwise return the exit code provided.
-    let code = match run(&args, music_tx, music_meta_tx, music_image_tx) {
-        Ok(code) => code,
-        Err(err) => {
-            error!("{}", err.to_string().to_lowercase());
-            -1
-        }
-    };
-
-    std::process::exit(code)
-}
-
-fn run(
-    args: &ArgMatches,
-    music_tx: &Sender<Music>,
-    music_meta_tx: &Sender<MusicMeta>,
-    music_image_tx: &Sender<MusicImage>,
-) -> Result<i32> {
-    let path = Path::new(args.get_one::<String>("INPUT").unwrap());
-
-    // Create a hint to help the format registry guess what format reader is appropriate.
-    let mut hint = Hint::new();
-
-    // If the path string is '-' then read from standard input.
-    let source = if path.as_os_str() == "-" {
-        Box::new(ReadOnlySource::new(std::io::stdin())) as Box<dyn MediaSource>
-    } else {
-        // Othwerise, get a Path from the path string.
-
-        // Provide the file extension as a hint.
-        if let Some(extension) = path.extension() {
-            if let Some(extension_str) = extension.to_str() {
-                hint.with_extension(extension_str);
-            }
-        }
-
-        Box::new(File::open(path)?)
-    };
-
-    // Create the media source stream using the boxed media source from above.
-    let mss = MediaSourceStream::new(source, Default::default());
-
-    // Use the default options for format readers other than for gapless playback.
-    let format_opts = FormatOptions {
-        enable_gapless: !args.get_flag("no-gapless"),
-        ..Default::default()
-    };
-
-    // Use the default options for metadata readers.
-    let metadata_opts: MetadataOptions = Default::default();
-
-    // Get the value of the track option, if provided.
-    let track = match args.get_one::<String>("track") {
-        Some(track_str) => track_str.parse::<usize>().ok(),
-        _ => None,
-    };
-
-    let no_progress = args.get_flag("no-progress");
-
-    // Probe the media source stream for metadata and get the format reader.
-    match symphonia::default::get_probe().format(&hint, mss, &format_opts, &metadata_opts) {
-        Ok(mut probed) => {
-            // Dump visuals if requested.
-            if args.get_flag("dump-visuals") {
-                let name = match path.file_name() {
-                    Some(name) if name != "-" => name,
-                    _ => OsStr::new("NoName"),
-                };
-
-                dump_visuals(&mut probed, name, music_image_tx);
-            }
-
-            // Select the operating mode.
-            if args.get_flag("verify-only") {
-                // Verify-only mode decodes and verifies the audio, but does not play it.
-                decode_only(
-                    probed.format,
-                    &DecoderOptions {
-                        verify: true,
-                        ..Default::default()
-                    },
-                )
-            } else if args.get_flag("decode-only") {
-                // Decode-only mode decodes the audio, but does not play or verify it.
-                decode_only(
-                    probed.format,
-                    &DecoderOptions {
-                        verify: false,
-                        ..Default::default()
-                    },
-                )
-            } else if args.get_flag("probe-only") {
-                // Probe-only mode only prints information about the format, tracks, metadata, etc.
-                print_format(path, &mut probed, music_meta_tx);
-                Ok(0)
-            } else {
-                // Playback mode.
-                print_format(path, &mut probed, music_meta_tx);
-
-                // If present, parse the seek argument.
-                let seek = if let Some(time) = args.get_one::<String>("seek") {
-                    Some(SeekPosition::Time(time.parse::<f64>().unwrap_or(0.0)))
-                } else {
-                    args.get_one::<String>("seek-ts")
-                        .map(|ts| SeekPosition::Timetamp(ts.parse::<u64>().unwrap_or(0)))
-                };
-
-                // Set the decoder options.
-                let decode_opts = DecoderOptions {
-                    verify: args.get_flag("verify"),
-                    ..Default::default()
-                };
-
-                // Play it!
-                play(
-                    probed.format,
-                    track,
-                    seek,
-                    &decode_opts,
-                    no_progress,
-                    music_tx,
-                    music_meta_tx,
-                )
-            }
         }
         Err(err) => {
             // The input was not supported by any format reader.
@@ -452,6 +209,7 @@ fn play(
     no_progress: bool,
     music_tx: &Sender<Music>,
     music_meta_tx: &Sender<MusicMeta>,
+    app: &AppHandle,
 ) -> Result<i32> {
     // If the user provided a track number, select that track if it exists, otherwise, select the
     // first track with a known codec.
@@ -484,7 +242,6 @@ fn play(
         match reader.seek(SeekMode::Accurate, seek_to) {
             Ok(seeked_to) => seeked_to.required_ts,
             Err(Error::ResetRequired) => {
-                print_tracks(reader.tracks());
                 track_id = first_supported_track(reader.tracks()).unwrap().id;
                 0
             }
@@ -513,13 +270,13 @@ fn play(
             no_progress,
             music_tx,
             music_meta_tx,
+            app,
         ) {
             Err(Error::ResetRequired) => {
                 // The demuxer indicated that a reset is required. This is sometimes seen with
                 // streaming OGG (e.g., Icecast) wherein the entire contents of the container change
                 // (new tracks, codecs, metadata, etc.). Therefore, we must select a new track and
                 // recreate the decoder.
-                print_tracks(reader.tracks());
 
                 // Select the first supported track since the user's selected track number might no
                 // longer be valid or make sense.
@@ -535,9 +292,14 @@ fn play(
 
     // Flush the audio output to finish playing back any leftover samples.
     if let Some(audio_output) = audio_output.as_mut() {
-        audio_output.flush()
+        audio_output.flush();
+        let state_handle = app.state::<RwLock<AppState>>();
+        let state = state_handle.read().unwrap();
+        if state.paused {
+            return Ok(0);
+        }
+        return Ok(100);
     }
-
     result
 }
 
@@ -549,6 +311,7 @@ fn play_track(
     no_progress: bool,
     music_tx: &Sender<Music>,
     music_meta_tx: &Sender<MusicMeta>,
+    app: &AppHandle,
 ) -> Result<i32> {
     // Get the selected track using the track ID.
     let track = match reader
@@ -572,7 +335,6 @@ fn play_track(
 
     // Decode and play the packets belonging to the selected track.
     let result = loop {
-
         // Get the next packet from the format reader.
         let packet = match reader.next_packet() {
             Ok(packet) => packet,
@@ -609,7 +371,6 @@ fn play_track(
 
                     // Try to open the audio output.
                     audio_output.replace(output::try_open(spec, duration).unwrap());
-
                 } else {
                     // TODO: Check the audio spec. and duration hasn't changed.
                 }
@@ -618,11 +379,27 @@ fn play_track(
                 // for the packet is >= the seeked position (0 if not seeking).
                 if packet.ts() >= play_opts.seek_ts {
                     if !no_progress {
-                        if PAUSED.load(Ordering::SeqCst) {
+                        let paused;
+                        let music_id;
+                        let music_name;
+                        let music_path;
+                        {
+                            let state_handle = app.state::<RwLock<AppState>>();
+                            let state = state_handle.read().unwrap();
+                            music_id = state.id;
+                            if music_id == -1 {
+                                music_name = "".to_string();
+                                music_path = "".to_string();
+                            } else {
+                                music_name = state.music_files[state.id as usize].name.clone();
+                                music_path = state.music_files[state.id as usize].path.clone();
+                            }
+                            paused = state.paused;
+                        }
+                        if paused {
                             return Ok(0);
                         }
                         let ts = packet.ts();
-                        print_progress(ts, dur, tb);
                         let mut progress = "".to_string();
                         let mut duration = "".to_string();
                         if let Some(tb) = tb {
@@ -645,11 +422,13 @@ fn play_track(
                             }
                         }
                         music_tx
-                            .send(Music::new(duration, progress))
+                            .send(Music::new(
+                                music_id, music_name, music_path, duration, progress,
+                            ))
                             .expect("send the msg to frontend failed!");
                     }
                     if let Some(audio_output) = audio_output {
-                        audio_output.write(decoded).unwrap()
+                        audio_output.write(decoded, app).unwrap()
                     }
                 }
             }
@@ -661,10 +440,6 @@ fn play_track(
             Err(err) => break Err(err),
         }
     };
-
-    if !no_progress {
-        println!();
-    }
 
     // Return if a fatal error occured.
     ignore_end_of_stream_error(result)?;
@@ -706,31 +481,8 @@ fn do_verification(finalization: FinalizeResult) -> Result<i32> {
     }
 }
 
-fn dump_visual(
-    visual: &Visual,
-    file_name: &OsStr,
-    index: usize,
-    music_image_tx: &Sender<MusicImage>,
-) {
+fn dump_visual(visual: &Visual, music_image_tx: &Sender<MusicImage>) {
     let content_type = visual.media_type.to_lowercase();
-    // let extension = match visual.media_type.to_lowercase().as_str() {
-    //     "image/bmp" => ".bmp",
-    //     "image/gif" => ".gif",
-    //     "image/jpeg" => ".jpg",
-    //     "image/png" => ".png",
-    //     _ => "",
-    // };
-    //
-    // println!("extension: {}", extension);
-    // let mut out_file_name = OsString::from(file_name);
-    // println!("out_file_name: {:?}", out_file_name);
-    // out_file_name.push(format!("-{:0>2}{}", index, extension));
-    //
-    // if let Err(err) = File::create(out_file_name).and_then(|mut file| file.write_all(&visual.data))
-    // {
-    //     warn!("failed to dump visual due to error {}", err);
-    // }
-
     // convert the image to base64
     let image = format!(
         "data:{};base64, {}",
@@ -743,10 +495,10 @@ fn dump_visual(
         .expect("send the msg to frontend failed!");
 }
 
-fn dump_visuals(probed: &mut ProbeResult, file_name: &OsStr, music_image_tx: &Sender<MusicImage>) {
+fn dump_visuals(probed: &mut ProbeResult, music_image_tx: &Sender<MusicImage>) {
     if let Some(metadata) = probed.format.metadata().current() {
         for (i, visual) in metadata.visuals().iter().enumerate() {
-            dump_visual(visual, file_name, i, music_image_tx);
+            dump_visual(visual, music_image_tx);
         }
 
         // Warn that certain visuals are preferred.
@@ -756,20 +508,16 @@ fn dump_visuals(probed: &mut ProbeResult, file_name: &OsStr, music_image_tx: &Se
         }
     } else if let Some(metadata) = probed.metadata.get().as_ref().and_then(|m| m.current()) {
         for (i, visual) in metadata.visuals().iter().enumerate() {
-            dump_visual(visual, file_name, i, music_image_tx);
+            dump_visual(visual, music_image_tx);
         }
     }
 }
 
-fn print_format(path: &Path, probed: &mut ProbeResult, music_meta_tx: &Sender<MusicMeta>) {
-    println!("+ {}", path.display());
-    print_tracks(probed.format.tracks());
-
+fn print_format(probed: &mut ProbeResult, music_meta_tx: &Sender<MusicMeta>, app: &AppHandle) {
     // Prefer metadata that's provided in the container format, over other tags found during the
     // probe operation.
     if let Some(metadata_rev) = probed.format.metadata().current() {
         print_tags(metadata_rev.tags(), music_meta_tx);
-        print_visuals(metadata_rev.visuals());
 
         // Warn that certain tags are preferred.
         if probed.metadata.get().as_ref().is_some() {
@@ -778,155 +526,30 @@ fn print_format(path: &Path, probed: &mut ProbeResult, music_meta_tx: &Sender<Mu
         }
     } else if let Some(metadata_rev) = probed.metadata.get().as_ref().and_then(|m| m.current()) {
         print_tags(metadata_rev.tags(), music_meta_tx);
-        print_visuals(metadata_rev.visuals());
+    } else {
+        let title;
+        {
+            let state_handle = app.state::<RwLock<AppState>>();
+            let state = state_handle.read().unwrap();
+            title = state.music_files[state.id as usize].name.clone();
+        }
+        let music_meta = MusicMeta::new(title);
+        music_meta_tx
+            .send(music_meta)
+            .expect("send the msg to frontend failed!");
     }
-
-    print_cues(probed.format.cues());
-    println!(":");
-    println!();
 }
 
 fn print_update(rev: &MetadataRevision, music_meta_tx: &Sender<MusicMeta>) {
     print_tags(rev.tags(), music_meta_tx);
-    print_visuals(rev.visuals());
-    println!(":");
-    println!();
-}
-
-fn print_tracks(tracks: &[Track]) {
-    if !tracks.is_empty() {
-        println!("|");
-        println!("| // Tracks //");
-
-        for (idx, track) in tracks.iter().enumerate() {
-            let params = &track.codec_params;
-
-            print!("|     [{:0>2}] Codec:           ", idx + 1);
-
-            if let Some(codec) = symphonia::default::get_codecs().get_codec(params.codec) {
-                println!("{} ({})", codec.long_name, codec.short_name);
-            } else {
-                println!("Unknown (#{})", params.codec);
-            }
-
-            if let Some(sample_rate) = params.sample_rate {
-                println!("|          Sample Rate:     {}", sample_rate);
-            }
-            if params.start_ts > 0 {
-                if let Some(tb) = params.time_base {
-                    println!(
-                        "|          Start Time:      {} ({})",
-                        fmt_time(params.start_ts, tb),
-                        params.start_ts
-                    );
-                } else {
-                    println!("|          Start Time:      {}", params.start_ts);
-                }
-            }
-            if let Some(n_frames) = params.n_frames {
-                if let Some(tb) = params.time_base {
-                    println!(
-                        "|          Duration:        {} ({})",
-                        fmt_time(n_frames, tb),
-                        n_frames
-                    );
-                } else {
-                    println!("|          Frames:          {}", n_frames);
-                }
-            }
-            if let Some(tb) = params.time_base {
-                println!("|          Time Base:       {}", tb);
-            }
-            if let Some(padding) = params.delay {
-                println!("|          Encoder Delay:   {}", padding);
-            }
-            if let Some(padding) = params.padding {
-                println!("|          Encoder Padding: {}", padding);
-            }
-            if let Some(sample_format) = params.sample_format {
-                println!("|          Sample Format:   {:?}", sample_format);
-            }
-            if let Some(bits_per_sample) = params.bits_per_sample {
-                println!("|          Bits per Sample: {}", bits_per_sample);
-            }
-            if let Some(channels) = params.channels {
-                println!("|          Channel(s):      {}", channels.count());
-                println!("|          Channel Map:     {}", channels);
-            }
-            if let Some(channel_layout) = params.channel_layout {
-                println!("|          Channel Layout:  {:?}", channel_layout);
-            }
-            if let Some(language) = &track.language {
-                println!("|          Language:        {}", language);
-            }
-        }
-    }
-}
-
-fn print_cues(cues: &[Cue]) {
-    if !cues.is_empty() {
-        println!("|");
-        println!("| // Cues //");
-
-        for (idx, cue) in cues.iter().enumerate() {
-            println!("|     [{:0>2}] Track:      {}", idx + 1, cue.index);
-            println!("|          Timestamp:  {}", cue.start_ts);
-
-            // Print tags associated with the Cue.
-            if !cue.tags.is_empty() {
-                println!("|          Tags:");
-
-                for (tidx, tag) in cue.tags.iter().enumerate() {
-                    if let Some(std_key) = tag.std_key {
-                        println!(
-                            "{}",
-                            print_tag_item(tidx + 1, &format!("{:?}", std_key), &tag.value, 21)
-                        );
-                    } else {
-                        println!("{}", print_tag_item(tidx + 1, &tag.key, &tag.value, 21));
-                    }
-                }
-            }
-
-            // Print any sub-cues.
-            if !cue.points.is_empty() {
-                println!("|          Sub-Cues:");
-
-                for (ptidx, pt) in cue.points.iter().enumerate() {
-                    println!(
-                        "|                      [{:0>2}] Offset:    {:?}",
-                        ptidx + 1,
-                        pt.start_offset_ts
-                    );
-
-                    // Start the number of sub-cue tags, but don't print them.
-                    if !pt.tags.is_empty() {
-                        println!(
-                            "|                           Sub-Tags:  {} (not listed)",
-                            pt.tags.len()
-                        );
-                    }
-                }
-            }
-        }
-    }
 }
 
 fn print_tags(tags: &[Tag], music_meta_tx: &Sender<MusicMeta>) {
     if !tags.is_empty() {
-        println!("|");
-        println!("| // Tags //");
-
-        let mut idx = 1;
-
-        let mut music_meta = MusicMeta::new();
+        let mut music_meta = MusicMeta::new("".to_string());
         // Print tags with a standard tag key first, these are the most common tags.
         for tag in tags.iter().filter(|tag| tag.is_known()) {
             if let Some(std_key) = tag.std_key {
-                println!(
-                    "{}",
-                    print_tag_item(idx, &format!("{:?}", std_key), &tag.value, 4)
-                );
                 match std_key {
                     StandardTagKey::Album => {
                         music_meta.album = tag.value.to_string();
@@ -940,100 +563,11 @@ fn print_tags(tags: &[Tag], music_meta_tx: &Sender<MusicMeta>) {
                     _ => {}
                 }
             }
-            idx += 1;
         }
-
         music_meta_tx
             .send(music_meta)
             .expect("send the msg to frontend failed!");
-
-        // Print the remaining tags with keys truncated to 26 characters.
-        for tag in tags.iter().filter(|tag| !tag.is_known()) {
-            println!("{}", print_tag_item(idx, &tag.key, &tag.value, 4));
-            idx += 1;
-        }
     }
-}
-
-fn print_visuals(visuals: &[Visual]) {
-    if !visuals.is_empty() {
-        println!("|");
-        println!("| // Visuals //");
-
-        for (idx, visual) in visuals.iter().enumerate() {
-            if let Some(usage) = visual.usage {
-                println!("|     [{:0>2}] Usage:      {:?}", idx + 1, usage);
-                println!("|          Media Type: {}", visual.media_type);
-            } else {
-                println!("|     [{:0>2}] Media Type: {}", idx + 1, visual.media_type);
-            }
-            if let Some(dimensions) = visual.dimensions {
-                println!(
-                    "|          Dimensions: {} px x {} px",
-                    dimensions.width, dimensions.height
-                );
-            }
-            if let Some(bpp) = visual.bits_per_pixel {
-                println!("|          Bits/Pixel: {}", bpp);
-            }
-            if let Some(ColorMode::Indexed(colors)) = visual.color_mode {
-                println!("|          Palette:    {} colors", colors);
-            }
-            println!("|          Size:       {} bytes", visual.data.len());
-
-            // Print out tags similar to how regular tags are printed.
-            if !visual.tags.is_empty() {
-                println!("|          Tags:");
-            }
-
-            for (tidx, tag) in visual.tags.iter().enumerate() {
-                if let Some(std_key) = tag.std_key {
-                    println!(
-                        "{}",
-                        print_tag_item(tidx + 1, &format!("{:?}", std_key), &tag.value, 21)
-                    );
-                } else {
-                    println!("{}", print_tag_item(tidx + 1, &tag.key, &tag.value, 21));
-                }
-            }
-        }
-    }
-}
-
-fn print_tag_item(idx: usize, key: &str, value: &Value, indent: usize) -> String {
-    let key_str = match key.len() {
-        0..=28 => format!("| {:w$}[{:0>2}] {:<28} : ", "", idx, key, w = indent),
-        _ => format!(
-            "| {:w$}[{:0>2}] {:.<28} : ",
-            "",
-            idx,
-            key.split_at(26).0,
-            w = indent
-        ),
-    };
-
-    let line_prefix = format!("\n| {:w$} : ", "", w = indent + 4 + 28 + 1);
-    let line_wrap_prefix = format!("\n| {:w$}   ", "", w = indent + 4 + 28 + 1);
-
-    let mut out = String::new();
-
-    out.push_str(&key_str);
-
-    for (wrapped, line) in value.to_string().lines().enumerate() {
-        if wrapped > 0 {
-            out.push_str(&line_prefix);
-        }
-
-        let mut chars = line.chars();
-        let split = (0..)
-            .map(|_| chars.by_ref().take(72).collect::<String>())
-            .take_while(|s| !s.is_empty())
-            .collect::<Vec<_>>();
-
-        out.push_str(&split.join(&line_wrap_prefix));
-    }
-
-    out
 }
 
 fn fmt_time(ts: u64, tb: TimeBase) -> String {
@@ -1044,77 +578,4 @@ fn fmt_time(ts: u64, tb: TimeBase) -> String {
     let secs = f64::from((time.seconds % 60) as u32) + time.frac;
 
     format!("{}:{:0>2}:{:0>6.3}", hours, mins, secs)
-}
-
-fn print_progress(ts: u64, dur: Option<u64>, tb: Option<TimeBase>) {
-    // Get a string slice containing a progress bar.
-    fn progress_bar(ts: u64, dur: u64) -> &'static str {
-        const NUM_STEPS: usize = 60;
-
-        lazy_static! {
-            static ref PROGRESS_BAR: Vec<String> = {
-                (0..NUM_STEPS + 1)
-                    .map(|i| format!("[{:<60}]", str::repeat("■", i)))
-                    .collect()
-            };
-        }
-
-        let i = (NUM_STEPS as u64)
-            .saturating_mul(ts)
-            .checked_div(dur)
-            .unwrap_or(0)
-            .clamp(0, NUM_STEPS as u64);
-
-        &PROGRESS_BAR[i as usize]
-    }
-
-    // Multiple print! calls would need to be made to print the progress, so instead, only lock
-    // stdout once and use write! rather then print!.
-    let stdout = std::io::stdout();
-    let mut output = stdout.lock();
-
-    if let Some(tb) = tb {
-        let t = tb.calc_time(ts);
-
-        let hours = t.seconds / (60 * 60);
-        let mins = (t.seconds % (60 * 60)) / 60;
-        let secs = f64::from((t.seconds % 60) as u32) + t.frac;
-
-        write!(
-            output,
-            "\r\u{25b6}\u{fe0f}  {}:{:0>2}:{:0>4.1}",
-            hours, mins, secs
-        )
-        .unwrap();
-
-        if let Some(dur) = dur {
-            let d = tb.calc_time(dur.saturating_sub(ts));
-
-            let hours = d.seconds / (60 * 60);
-            let mins = (d.seconds % (60 * 60)) / 60;
-            let secs = f64::from((d.seconds % 60) as u32) + d.frac;
-
-            write!(
-                output,
-                " {} -{}:{:0>2}:{:0>4.1}",
-                progress_bar(ts, dur),
-                hours,
-                mins,
-                secs
-            )
-            .unwrap();
-        }
-    } else {
-        write!(output, "\r\u{25b6}\u{fe0f}  {}", ts).unwrap();
-    }
-
-    // This extra space is a workaround for Konsole to correctly erase the previous line.
-    write!(output, " ").unwrap();
-
-    // Flush immediately since stdout is buffered.
-    output.flush().unwrap();
-}
-
-pub fn pause() {
-    output::try_pause();
 }

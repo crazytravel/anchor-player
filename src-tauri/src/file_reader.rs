@@ -43,6 +43,14 @@ fn read_dir_files(dir: &str) -> Result<Vec<String>, Error> {
 fn filter_audio_files(paths: &[String]) -> Vec<String> {
     paths
         .iter()
+        .filter(|path| {
+            let path_obj = Path::new(path);
+            !path_obj
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap()
+                .starts_with(".")
+        }) // filter out hidden files
         .filter_map(|path| {
             let path_obj = Path::new(path);
             let extension = path_obj

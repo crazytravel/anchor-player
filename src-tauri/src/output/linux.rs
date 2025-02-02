@@ -1,17 +1,15 @@
-use std::sync::atomic::Ordering;
-
 use super::Result;
-use std::sync::atomic::Ordering;
-
+use std::sync::RwLock;
 use symphonia::core::audio::*;
 use symphonia::core::units::Duration;
 
-use crate::output::output::{AudioOutput, AudioOutputError, VOLUME};
-use crate::player::PAUSED;
+use crate::output::{AudioOutput, AudioOutputError};
 use libpulse_binding as pulse;
 use libpulse_simple_binding as psimple;
 
+use crate::AppState;
 use log::{error, warn};
+use tauri::Manager;
 
 pub struct PulseAudioOutput {
     pa: psimple::Simple,
@@ -68,24 +66,28 @@ impl PulseAudioOutput {
         }
     }
 
-    fn handle_stream_state(&self) {
-        if PAUSED.load(Ordering::SeqCst) {
+    fn handle_stream_state(&self, app: &tauri::AppHandle) {
+        let state_handle = app.state::<RwLock<AppState>>();
+        let state = state_handle.read().unwrap();
+        if state.paused {
             let _ = self.pa.drain();
         }
     }
 }
 
 impl AudioOutput for PulseAudioOutput {
-    fn write(&mut self, decoded: AudioBufferRef<'_>) -> Result<()> {
+    fn write(&mut self, decoded: AudioBufferRef<'_>, app: &tauri::AppHandle) -> Result<()> {
         // Do nothing if there are no audio frames.
         if decoded.frames() == 0 {
             return Ok(());
         }
 
-        self.handle_stream_state();
+        self.handle_stream_state(app);
 
         // If paused, just return without writing
-        if PAUSED.load(Ordering::SeqCst) {
+        let state_handle = app.state::<RwLock<AppState>>();
+        let state = state_handle.read().unwrap();
+        if state.paused {
             return Ok(());
         }
 
@@ -93,9 +95,11 @@ impl AudioOutput for PulseAudioOutput {
         self.sample_buf.copy_interleaved_ref(decoded);
 
         // Apply volume scaling.
-        let volume = VOLUME.load(Ordering::SeqCst);
+        let state_handle = app.state::<RwLock<AppState>>();
+        let state = state_handle.read().unwrap();
+        let volume = state.volume;
         if volume != 1.0 {
-            let samples = self.sample_buf.as_mut_byte_slice();
+            let mut samples = self.sample_buf.as_bytes();
             for sample in samples.chunks_exact_mut(4) {
                 if let Ok(value) = sample.try_into() {
                     let mut float_sample = f32::from_le_bytes(value);
@@ -164,6 +168,5 @@ fn map_channels_to_pa_channelmap(channels: Channels) -> Option<pulse::channelmap
 }
 
 pub fn try_open(spec: SignalSpec, duration: Duration) -> Result<Box<dyn AudioOutput>> {
-    PAUSED.store(false, Ordering::SeqCst);
     PulseAudioOutput::try_open(spec, duration)
 }

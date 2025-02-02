@@ -1,37 +1,30 @@
 .row {
-  display: flex;
+    display: flex;
 }
 
 .info-bar {
-  text-align: right;
+    text-align: right;
 }
 
 .info-bar span {
-  padding: 0 0.5em;
-  cursor: pointer;
+    padding: 0 0.5em;
+    cursor: pointer;
 }
 
 .label {
-  display: flex;
-  justify-content: right;
-  align-items: center;
-  flex: 1;
-  text-align: right;
-  padding: 1px;
-  color: #666666;
+    display: flex;
+    justify-content: right;
+    align-items: center;
+    flex: 1;
+    text-align: right;
+    padding: 1px;
 }
 
 .col {
-  display: flex;
-  justify-content: left;
-  align-items: center;
-  flex: 3;
-  text-align: left;
-  padding: 1px;
-}
-
-@media (prefers-color-scheme: dark) {
-  .music-info {
-    background-color: #333333;
-  }
+    display: flex;
+    justify-content: left;
+    align-items: center;
+    flex: 3;
+    text-align: left;
+    padding: 1px;
 }

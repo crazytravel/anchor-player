@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct MusicInfo {
@@ -43,13 +43,22 @@ impl MusicInfo {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Music {
+    pub id: i32,
+    pub name: String,
+    pub path: String,
     pub duration: String,
     pub progress: String,
 }
 
 impl Music {
-    pub fn new(duration: String, progress: String) -> Self {
-        Self { duration, progress }
+    pub fn new(id: i32, name: String, path: String, duration: String, progress: String) -> Self {
+        Self {
+            id,
+            name,
+            path,
+            duration,
+            progress,
+        }
     }
 }
 
@@ -61,9 +70,9 @@ pub struct MusicMeta {
 }
 
 impl MusicMeta {
-    pub fn new() -> Self {
+    pub fn new(title: String) -> Self {
         Self {
-            title: "".to_string(),
+            title,
             artist: "".to_string(),
             album: "".to_string(),
         }
@@ -78,5 +87,30 @@ pub struct MusicImage {
 impl MusicImage {
     pub fn new(image: String) -> Self {
         Self { image }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MusicState {
+    pub id: i32,
+    pub state: String,
+}
+
+impl MusicState {
+    pub fn new(id: i32, state: String) -> Self {
+        Self { id, state }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MusicFile {
+    pub id: i32,
+    pub name: String,
+    pub path: String,
+}
+
+impl MusicFile {
+    pub fn new(id: i32, name: String, path: String) -> Self {
+        Self { id, name, path }
     }
 }
