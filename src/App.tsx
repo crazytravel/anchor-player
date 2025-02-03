@@ -20,7 +20,7 @@ import {
   RandomIcon,
   RepeatIcon,
   RepeatOneIcon,
-  StopIcon,
+  PauseIcon,
   VolumeHighIcon,
   VolumeLowIcon,
   VolumeMuteIcon,
@@ -87,19 +87,20 @@ function App() {
   };
 
   const start = async (id: number) => {
+    console.log('start:', id)
     try {
-      setPlay(true);
       setMusicImage(undefined);
       setMusicInfo(undefined);
       setId(id);
       await invoke('play', { id });
+      setPlay(true);
     } catch (error) {
       console.error('Failed to start playback:', error);
       setPlay(false);
     }
   };
 
-  async function stop() {
+  async function pause() {
     setPlay(false);
     calculateProgress('0:00:00.0', '0:00:00.0');
     await invoke('pause');
@@ -109,8 +110,9 @@ function App() {
   };
 
   async function playControl() {
+    console.log('playControl:', play)
     if (play) {
-      await stop();
+      await pause();
       return;
     }
     if (openedFiles && openedFiles.length > 0) {
@@ -188,11 +190,9 @@ function App() {
         },
       ],
     });
-    console.log(files);
     if (files) {
       setOpenedFiles([...files]);
       const musicFiles = initFiles(files);
-      console.log('music files:', musicFiles);
       setPlay(false);
       setId(-1);
       setMusic(undefined);
@@ -206,7 +206,6 @@ function App() {
       multiple: true,
       directory: true,
     });
-    console.log(paths);
     if (paths) {
       const files = await invoke<string[]>('list_files', { dirs: paths });
       if (files.length > 0) {
@@ -243,7 +242,10 @@ function App() {
     if (!openedFiles || openedFiles.length === 0) {
       return;
     }
-    await start(index);
+    console.log('index:', index)
+    const id = musicList[index].id;
+    console.log('id:', id)
+    await start(id);
   };
 
   const deleteFromPlayList = async (index: number) => {
@@ -271,6 +273,7 @@ function App() {
     const durationSeconds = timeToSeconds(
       music?.duration || '0:00:00.0',
     );
+    setPlay(true);
     const newTime = (percentage / 100) * (progressSeconds + durationSeconds);
     await invoke('play', { id: -1, time: newTime }).catch(console.error);
   }
@@ -278,6 +281,20 @@ function App() {
   const formatTime = (time: string): string => {
     return time.split('.')[0];
   };
+
+  const registerShortcuts = async () => {
+    // await register(['CommandOrControl+ARROWLEFT', 'CommandOrControl+ARROWRIGHT', 'SPACE'], (event) => {
+    //   if (event.state === "Pressed") {
+    //     if (event.shortcut === 'CommandOrControl+ARROWLEFT') {
+    //       startPlayPrevious();
+    //     } else if (event.shortcut === 'CommandOrControl+ARROWRIGHT') {
+    //       startPlayNext();
+    //     } else if (event.shortcut === 'SPACE') {
+    //       playControl();
+    //     }
+    //   }
+    // });
+  }
 
   useEffect(() => {
     const unMusicInfoListen = listen<MusicInfo>('music-info', (event) => {
@@ -312,6 +329,7 @@ function App() {
     }
 
     showWindow();
+    registerShortcuts();
     return () => {
       unMusicInfoListen.then(f => f());
       unMusicListen.then(f => f());
@@ -428,7 +446,7 @@ function App() {
                 <PreviousIcon />
               </div>
               <div className="play" onClick={playControl}>
-                {play ? <StopIcon size={60} /> : <PlayIcon size={60} />}
+                {play ? <PauseIcon size={50} /> : <PlayIcon size={50} />}
               </div>
               <div className="next" onClick={() => startPlayNext()}>
                 <NextIcon />

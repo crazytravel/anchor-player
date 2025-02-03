@@ -51,7 +51,7 @@ fn play_music(id: i32, position: Option<Time>, app: AppHandle) {
             state.paused = true;
         }
     }
-    thread::sleep(std::time::Duration::from_millis(100));
+    thread::sleep(std::time::Duration::from_millis(200));
     {
         let state_handle = app.state::<RwLock<AppState>>();
         let mut state = state_handle.write().unwrap();
@@ -158,7 +158,7 @@ fn play(id: i32, time: Option<f64>, app: AppHandle) {
         play_music(id, None, app);
         return;
     }
-    let current_id;
+    let mut current_id;
     let position;
     {
         let cloned_app = app.clone();
@@ -168,6 +168,13 @@ fn play(id: i32, time: Option<f64>, app: AppHandle) {
             current_id = 0;
         } else {
             current_id = state.id;
+        }
+        let music_file = state
+            .music_files
+            .iter()
+            .find(|&music_file| music_file.id == current_id);
+        if music_file.is_none() {
+            current_id = 0;
         }
         position = state.time_position;
     }
@@ -300,6 +307,7 @@ fn show_main_window(window: tauri::Window) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(RwLock::new(AppState::new()))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())

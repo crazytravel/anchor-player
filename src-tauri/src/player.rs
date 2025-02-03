@@ -382,8 +382,18 @@ fn play_track(
                                 music_name = "".to_string();
                                 music_path = "".to_string();
                             } else {
-                                music_name = state.music_files[state.id as usize].name.clone();
-                                music_path = state.music_files[state.id as usize].path.clone();
+                                let music_file = state
+                                    .music_files
+                                    .iter()
+                                    .find(|&music_file| music_file.id == music_id)
+                                    .cloned();
+                                if let Some(music_file) = music_file {
+                                    music_name = music_file.name.clone();
+                                    music_path = music_file.path.clone();
+                                } else {
+                                    music_name = "".to_string();
+                                    music_path = "".to_string();
+                                }
                             }
                             paused = state.paused;
                         }
