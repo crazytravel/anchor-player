@@ -20,7 +20,6 @@ type MusicStore = {
   previousVolume: number
   isMuted: boolean
   sequenceType: number
-  imageLoaded: boolean
 
   setId: (id: number) => void
   setMusic: (music?: Music) => void
@@ -38,7 +37,6 @@ type MusicStore = {
   setPreviousVolume: (previousVolume: number) => void
   setIsMuted: (isMuted: boolean) => void
   setSequencType: (sequenceType: number) => void
-  setImageLoaded: (imageLoaded: boolean) => void
 }
 
 export const useMusicStore = create<MusicStore>((set) => ({
@@ -58,7 +56,6 @@ export const useMusicStore = create<MusicStore>((set) => ({
   previousVolume: 1,
   isMuted: false,
   sequenceType: SEQUENCE_TYPES.REPEAT,
-  imageLoaded: false,
 
   setId: (id: number) => set(() => {
     return {
@@ -88,5 +85,4 @@ export const useMusicStore = create<MusicStore>((set) => ({
   setSequencType: (sequenceType: number) => set(() => {
     return { sequenceType };
   }),
-  setImageLoaded: (imageLoaded: boolean) => set({ imageLoaded })
 }));

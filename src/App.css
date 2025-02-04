@@ -389,7 +389,7 @@ a:hover {
 }
 
 .volume-slider::-webkit-slider-thumb:hover {
-    background: #FF8C7D;
+    background: #FF7B8E;
 }
 
 .volume-slider::-moz-range-thumb {
@@ -402,5 +402,5 @@ a:hover {
 }
 
 .volume-slider::-moz-range-thumb:hover {
-    background: #FF8C7D;
+    background: #FF7B8E;
 }

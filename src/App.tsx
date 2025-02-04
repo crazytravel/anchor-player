@@ -10,7 +10,6 @@ import { listen } from '@tauri-apps/api/event';
 import { Music, MusicFile, MusicInfo, MusicInfoRes, MusicMeta } from './declare.ts';
 import Info from './info';
 import {
-  AlbumIcon,
   DeleteIcon,
   InfoIcon,
   NextIcon,
@@ -49,7 +48,6 @@ function App() {
     volume,
     previousVolume,
     isMuted,
-    imageLoaded,
     sequenceType,
     setId,
     setMusic,
@@ -67,7 +65,6 @@ function App() {
     setPreviousVolume,
     setIsMuted,
     setSequencType,
-    setImageLoaded,
   } = useMusicStore();
 
   const fetchMusicInfo = async (keyword: string) => {
@@ -384,6 +381,8 @@ function App() {
       if (!event.payload.title) return;
       setMusicTitle(event.payload.title);
       setMusicMeta(event.payload);
+      setMusicArtist(event.payload.artist);
+      setMusicAlbum(event.payload.album);
       let keyword = event.payload.title;
       if (event.payload.album) {
         keyword = event.payload.album + '+' + keyword;
@@ -394,10 +393,10 @@ function App() {
       await fetchMusicInfo(keyword);
     });
 
-    const unListenedImage = listen<string>('music-image', (event) => {
-      // console.log("Received event:", event.payload);
-      // setMusicImage(event.payload);
-    });
+    // const unListenedImage = listen<string>('music-image', (event) => {
+    //   // console.log("Received event:", event.payload);
+    //   setMusicImage(event.payload);
+    // });
 
     const showWindow = async () => {
       await invoke('show_main_window', {});
@@ -416,7 +415,7 @@ function App() {
       unMusicListen.then(f => f());
       unFinishedListen.then(f => f());
       unListenedMeta.then(f => f());
-      unListenedImage.then(f => f());
+      // unListenedImage.then(f => f());
     }
   }, []);
 
@@ -447,7 +446,7 @@ function App() {
               {openedFiles?.map((file, index) => (
                 <li
                   key={index}
-                  className={(musicList[index].id === id && 'active') || ''}
+                  className={(musicList[index].id === id && play && 'active') || ''}
                 >
                   <div
                     onDoubleClick={() => changeMusic(index)}
@@ -479,7 +478,7 @@ function App() {
             <div className="img-container">
               <div className={play ? 'img-wrapper rotate' : 'img-wrapper'}>
                 {musicImage ? (
-                  <img src={musicImage} className="logo" alt="music" onLoad={() => setImageLoaded(true)} />
+                  <img src={musicImage} className="logo" alt="music" />
                 ) : (
                   <img src={bg} className="logo" alt="music" />
                 )}
