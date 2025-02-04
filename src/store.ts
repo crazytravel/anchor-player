@@ -1,13 +1,16 @@
 import { create } from 'zustand';
 import { SEQUENCE_TYPES } from './constants';
-import { Music, MusicFile, MusicImage, MusicInfo, MusicMeta } from './declare';
+import { Music, MusicFile, MusicInfo, MusicMeta } from './declare';
 
 type MusicStore = {
   id: number
   music?: Music
   musicInfo?: MusicInfo
   musicMeta?: MusicMeta
-  musicImage?: MusicImage
+  musicTitle?: string
+  musicArtist?: string
+  musicAlbum?: string
+  musicImage?: string
   play: boolean
   infoDisplay: boolean
   openedFiles: string[]
@@ -21,7 +24,10 @@ type MusicStore = {
   setMusic: (music?: Music) => void
   setMusicInfo: (musicInfo?: MusicInfo) => void
   setMusicMeta: (musicMeta?: MusicMeta) => void
-  setMusicImage: (musicImage?: MusicImage) => void
+  setMusicTitle: (musicTitle?: string) => void
+  setMusicArtist: (musicArtist?: string) => void
+  setMusicAlbum: (musicAlbum?: string) => void
+  setMusicImage: (musicImage?: string) => void
   setPlay: (play: boolean) => void
   setInfoDisplay: (infoDisplay: boolean) => void
   setOpenedFiles: (openedFiles: string[]) => void
@@ -37,6 +43,9 @@ export const useMusicStore = create<MusicStore>((set) => ({
   music: undefined,
   musicInfo: undefined,
   musicMeta: undefined,
+  musicTitle: undefined,
+  musicArtist: undefined,
+  musicAlbum: undefined,
   musicImage: undefined,
   play: false,
   infoDisplay: false,
@@ -54,8 +63,11 @@ export const useMusicStore = create<MusicStore>((set) => ({
   }),
   setMusic: (music?: Music) => set({ music }),
   setMusicInfo: (musicInfo?: MusicInfo) => set({ musicInfo }),
-  setMusicMeta: (musicMeta?: MusicMeta) => set({ musicMeta }),
-  setMusicImage: (musicImage?: MusicImage) => set({ musicImage }),
+  setMusicMeta: (musicMeta?: MusicMeta) => set(() => { return { musicMeta } }),
+  setMusicTitle: (musicTitle?: string) => set(() => { return { musicTitle } }),
+  setMusicArtist: (musicArtist?: string) => set(() => { return { musicArtist } }),
+  setMusicAlbum: (musicAlbum?: string) => set(() => { return { musicAlbum } }),
+  setMusicImage: (musicImage?: string) => set({ musicImage }),
   setInfoDisplay: (infoDisplay: boolean) => set({ infoDisplay }),
   setPlay: (play: boolean) => set(() => {
     return { play };

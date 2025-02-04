@@ -1,12 +1,13 @@
 import { useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
+import { fetch } from '@tauri-apps/plugin-http';
 
 import './App.css';
 import bg from './assets/bg.png';
 
 import { listen } from '@tauri-apps/api/event';
-import { Music, MusicFile, MusicImage, MusicInfo, MusicMeta } from './declare.ts';
+import { Music, MusicFile, MusicInfo, MusicInfoRes, MusicMeta } from './declare.ts';
 import Info from './info';
 import {
   AlbumIcon,
@@ -37,6 +38,9 @@ function App() {
     music,
     musicInfo,
     musicMeta,
+    musicTitle,
+    musicArtist,
+    musicAlbum,
     musicImage,
     play,
     infoDisplay,
@@ -50,6 +54,9 @@ function App() {
     setMusic,
     setMusicInfo,
     setMusicMeta,
+    setMusicTitle,
+    setMusicArtist,
+    setMusicAlbum,
     setMusicImage,
     setPlay,
     setInfoDisplay,
@@ -60,6 +67,43 @@ function App() {
     setIsMuted,
     setSequencType,
   } = useMusicStore();
+
+  const fetchMusicInfo = async (keyword: string) => {
+    // Send a GET request
+    const response = await fetch(`https://itunes.apple.com/cn/search?term=${keyword}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    console.log(response.status); // e.g. 200
+    console.log(response.statusText); // e.g. "OK"
+    if (response.status !== 200) {
+      return;
+    }
+    const resBody: MusicInfoRes = await response.json();
+    console.log(resBody);
+    if (resBody.resultCount !== 0) {
+      // filter kind: song, wrapperType: track, sort releaseDate with desc and trackNumber with asc and get the first one
+      const results = resBody.results
+        .filter((body) => body.kind.toLowerCase() === 'song' && body.wrapperType.toLowerCase() === 'track')
+        .sort((a, b) => {
+          return new Date(a.releaseDate).getTime() - new Date(b.releaseDate).getTime();
+        });
+      if (results.length === 0) {
+        return;
+      }
+      const result = results[0];
+
+      if (result.artworkUrl100) {
+        const url = result.artworkUrl100.replace('100x100', '1000x1000');
+        setMusicImage(url);
+      }
+      setMusicArtist(result.artistName);
+      setMusicAlbum(result.collectionName);
+      console.log('musicMeta:', musicMeta)
+    }
+  }
 
   // Add volume control functions
   const handleVolumeChange = async (newVolume: number) => {
@@ -89,7 +133,7 @@ function App() {
   const start = async (id: number) => {
     console.log('start:', id)
     try {
-      setMusicImage(undefined);
+      // setMusicImage(undefined);
       setMusicInfo(undefined);
       setId(id);
       await invoke('play', { id });
@@ -195,8 +239,13 @@ function App() {
       const musicFiles = initFiles(files);
       setPlay(false);
       setId(-1);
+      setMusicTitle(undefined);
+      setMusicArtist(undefined);
+      setMusicAlbum(undefined);
       setMusic(undefined);
+      setMusicImage(undefined);
       setMusicList(musicFiles);
+      await pause();
       await invoke('set_music_files', { musicFiles: musicFiles })
     }
   };
@@ -213,8 +262,13 @@ function App() {
         const musicFiles = initFiles(files);
         setPlay(false);
         setId(-1);
+        setMusicTitle(undefined);
+        setMusicArtist(undefined);
+        setMusicAlbum(undefined);
         setMusic(undefined);
+        setMusicImage(undefined);
         setMusicList(musicFiles);
+        await pause();
         await invoke('set_music_files', { musicFiles: musicFiles })
       }
     }
@@ -313,13 +367,22 @@ function App() {
       await finishPlay();
     });
 
-    const unListenedMeta = listen<MusicMeta>('music-meta', (event) => {
+    const unListenedMeta = listen<MusicMeta>('music-meta', async (event) => {
       console.log('event from music-meta:', event.payload)
       if (!event.payload.title) return;
+      setMusicTitle(event.payload.title);
       setMusicMeta(event.payload);
+      let keyword = event.payload.title;
+      if (event.payload.album) {
+        keyword = event.payload.album + '+' + keyword;
+      }
+      if (event.payload.artist) {
+        keyword = event.payload.artist + '+' + keyword;
+      }
+      await fetchMusicInfo(keyword);
     });
 
-    const unListenedImage = listen<MusicImage>('music-image', (event) => {
+    const unListenedImage = listen<string>('music-image', (event) => {
       // console.log("Received event:", event.payload);
       setMusicImage(event.payload);
     });
@@ -330,6 +393,12 @@ function App() {
 
     showWindow();
     registerShortcuts();
+    // Production environment, cancel right-click menu
+    if (!import.meta.env.DEV) {
+      document.oncontextmenu = (event) => {
+        event.preventDefault()
+      }
+    }
     return () => {
       unMusicInfoListen.then(f => f());
       unMusicListen.then(f => f());
@@ -341,14 +410,20 @@ function App() {
 
 
   return (
-    <div className="flex flex-col w-full h-full m-0 p-0">
+    <div className="flex flex-col w-full h-full m-0 p-0 relative">
+      <div
+        className="absolute inset-0 bg-cover bg-center blur-3xl"
+        style={{
+          backgroundImage: `url(${musicImage ? musicImage : bg})`,
+        }}
+      ></div>
       <header
-        className="h-8 w-full text-center p-2 cursor-default app-name"
+        className="relative z-10 h-8 w-full text-center p-2 cursor-default app-name"
         data-tauri-drag-region="true"
       >
         Anchor Player - Lossless Music Player
       </header>
-      <main className="h-0 flex-1 flex flex-col p-4">
+      <main className="relative z-10 h-0 flex-1 flex flex-col p-4">
         <div className="play-container">
           <div className="list-wrapper">
             <div className="toolbar">
@@ -385,14 +460,14 @@ function App() {
           </div>
           <div className="play-wrapper">
             <div className="title-wrapper">
-              <div className="title">{musicMeta?.title}</div>
-              <div className="artist">{musicMeta?.artist}</div>
-              <div className="album">{musicMeta?.album}</div>
+              <div className="title">{musicTitle}</div>
+              <div className="p-2">{musicArtist}</div>
+              <div>{musicAlbum}</div>
             </div>
             <div className="img-container">
               <div className={play ? 'img-wrapper rotate' : 'img-wrapper'}>
-                {musicImage?.image ? (
-                  <img src={musicImage.image} className="logo" alt="music" />
+                {musicImage ? (
+                  <img src={musicImage} className="logo" alt="music" />
                 ) : (
                   <img src={bg} className="logo" alt="music" />
                 )}
@@ -401,11 +476,11 @@ function App() {
             <div className="short-info">
               <div>{musicInfo?.codec_short}</div>
               <div>
-                {musicInfo?.sample_rate && `${parseInt(musicInfo?.sample_rate) / 1000}kHz`}
+                {musicInfo?.sample_rate && `${parseInt(musicInfo?.sample_rate) / 1000} kHz`}
               </div>
               <div>
                 {musicInfo?.bits_per_sample &&
-                  `${musicInfo?.bits_per_sample}bit`}
+                  `${musicInfo?.bits_per_sample} bit`}
               </div>
             </div>
           </div>
@@ -418,7 +493,7 @@ function App() {
             <div
               className="progress-bar"
               style={{
-                width: `${calculateProgress(music?.progress, music?.duration)}%`,
+                width: `${calculateProgress(music?.progress, music?.duration)}% `,
               }}
             />
           </div>

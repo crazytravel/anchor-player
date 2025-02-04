@@ -307,6 +307,7 @@ fn show_main_window(window: tauri::Window) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(RwLock::new(AppState::new()))
         .plugin(tauri_plugin_dialog::init())

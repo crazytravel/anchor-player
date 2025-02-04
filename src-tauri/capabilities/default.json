@@ -13,6 +13,20 @@
     "dialog:default",
     "global-shortcut:allow-is-registered",
     "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister"
+    "global-shortcut:allow-unregister",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "https://*.apple.com"
+        },
+        {
+          "url": "https://*.itunes.apple.com"
+        },
+        {
+          "url": "https://*.mzstatic.com"
+        }
+      ]
+    }
   ]
 }
