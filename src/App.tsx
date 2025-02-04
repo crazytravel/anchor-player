@@ -49,6 +49,7 @@ function App() {
     volume,
     previousVolume,
     isMuted,
+    imageLoaded,
     sequenceType,
     setId,
     setMusic,
@@ -66,6 +67,7 @@ function App() {
     setPreviousVolume,
     setIsMuted,
     setSequencType,
+    setImageLoaded,
   } = useMusicStore();
 
   const fetchMusicInfo = async (keyword: string) => {
@@ -96,7 +98,7 @@ function App() {
       const result = results[0];
 
       if (result.artworkUrl100) {
-        const url = result.artworkUrl100.replace('100x100', '1000x1000');
+        const url = result.artworkUrl100.replace('100x100', '600x600');
         setMusicImage(url);
       }
       setMusicArtist(result.artistName);
@@ -127,13 +129,19 @@ function App() {
 
   const extractMusicName = (path: string): string => {
     const parts = path.split('/');
-    return parts[parts.length - 1].split('.')[0];
+    // split with last '.' and get the first part
+    const fullFilename = parts[parts.length - 1];
+    const index = fullFilename.lastIndexOf('.');
+    const filename = fullFilename.substring(0, index);
+    return filename;
   };
 
   const start = async (id: number) => {
     console.log('start:', id)
     try {
-      // setMusicImage(undefined);
+      setMusicArtist(undefined);
+      setMusicAlbum(undefined);
+      setMusicImage(bg);
       setMusicInfo(undefined);
       setId(id);
       await invoke('play', { id });
@@ -165,10 +173,14 @@ function App() {
   }
 
   const playPrevious = async () => {
+    setMusicArtist(undefined);
+    setMusicAlbum(undefined);
     await invoke('play_prevois', {});
   };
 
   const playNext = async () => {
+    setMusicArtist(undefined);
+    setMusicAlbum(undefined);
     await invoke('play_next', {});
   };
 
@@ -177,7 +189,7 @@ function App() {
       return;
     }
     setPlay(true);
-    setMusicImage(undefined);
+    setMusicImage(bg);
     await playPrevious();
   }
 
@@ -186,7 +198,7 @@ function App() {
       return;
     }
     setPlay(true);
-    setMusicImage(undefined);
+    setMusicImage(bg);
     await playNext();
   }
 
@@ -243,7 +255,7 @@ function App() {
       setMusicArtist(undefined);
       setMusicAlbum(undefined);
       setMusic(undefined);
-      setMusicImage(undefined);
+      setMusicImage(bg);
       setMusicList(musicFiles);
       await pause();
       await invoke('set_music_files', { musicFiles: musicFiles })
@@ -266,7 +278,7 @@ function App() {
         setMusicArtist(undefined);
         setMusicAlbum(undefined);
         setMusic(undefined);
-        setMusicImage(undefined);
+        setMusicImage(bg);
         setMusicList(musicFiles);
         await pause();
         await invoke('set_music_files', { musicFiles: musicFiles })
@@ -363,7 +375,7 @@ function App() {
 
     const unFinishedListen = listen<number>('finished', async (event) => {
       console.log('event from finished:', event.payload)
-      setMusicImage(undefined);
+      setMusicImage(bg);
       await finishPlay();
     });
 
@@ -384,7 +396,7 @@ function App() {
 
     const unListenedImage = listen<string>('music-image', (event) => {
       // console.log("Received event:", event.payload);
-      setMusicImage(event.payload);
+      // setMusicImage(event.payload);
     });
 
     const showWindow = async () => {
@@ -414,7 +426,7 @@ function App() {
       <div
         className="absolute inset-0 bg-cover bg-center blur-3xl"
         style={{
-          backgroundImage: `url(${musicImage ? musicImage : bg})`,
+          backgroundImage: `url(${musicImage})`,
         }}
       ></div>
       <header
@@ -448,11 +460,11 @@ function App() {
                     onClick={async () => deleteFromPlayList(index)}
                   >
                     {(musicList[index].id !== id || !play) && <DeleteIcon />}
-                    {musicList[index].id === id && play && (
+                    {/* {musicList[index].id === id && play && (
                       <span className="rotate">
                         <AlbumIcon />
                       </span>
-                    )}
+                    )} */}
                   </div>
                 </li>
               ))}
@@ -467,7 +479,7 @@ function App() {
             <div className="img-container">
               <div className={play ? 'img-wrapper rotate' : 'img-wrapper'}>
                 {musicImage ? (
-                  <img src={musicImage} className="logo" alt="music" />
+                  <img src={musicImage} className="logo" alt="music" onLoad={() => setImageLoaded(true)} />
                 ) : (
                   <img src={bg} className="logo" alt="music" />
                 )}

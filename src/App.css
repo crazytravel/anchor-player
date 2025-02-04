@@ -130,7 +130,7 @@ body {
     width: 20em;
     text-align: left;
     flex-direction: column;
-    background-color: rgba(29, 29, 29, 0.7);
+    background-color: rgba(29, 29, 29, 0.6);
     padding: 1em;
     border-radius: 0.5em;
 }
@@ -145,6 +145,7 @@ body {
     padding: 1em 1em 0 1em;
     text-align: center;
     height: 6rem;
+    text-shadow: 1px 1px 4px #1D1D1D;
 }
 
 .title {
@@ -308,7 +309,7 @@ a:hover {
 }
 
 .list>li:hover {
-    background-color: #292B36;
+    background-color: rgba(80, 80, 80, 0.5);
 }
 
 .file-name {
@@ -357,11 +358,12 @@ a:hover {
 
 .icon {
     cursor: pointer;
-    color: #4A90E2;
+    /* color: #4A90E2; */
+    color: #D34B60;
 }
 
 .icon:hover {
-    color: #6AAEE7;
+    color: #FF7B8E;
 }
 
 .volume-slider {
@@ -369,7 +371,7 @@ a:hover {
     width: 7em;
     height: 2px;
     border-radius: 2px;
-    background: #1D1D1D;
+    background: #D34B60;
     outline: none;
     cursor: pointer;
     padding: 0;
@@ -382,12 +384,12 @@ a:hover {
     width: 0.7em;
     height: 0.7em;
     border-radius: 50%;
-    background: #4A90E2;
+    background: #D34B60;
     cursor: pointer;
 }
 
 .volume-slider::-webkit-slider-thumb:hover {
-    background: #6AAEE7;
+    background: #FF8C7D;
 }
 
 .volume-slider::-moz-range-thumb {
@@ -400,5 +402,5 @@ a:hover {
 }
 
 .volume-slider::-moz-range-thumb:hover {
-    background: #6AAEE7;
+    background: #FF8C7D;
 }

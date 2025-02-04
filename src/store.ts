@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { SEQUENCE_TYPES } from './constants';
 import { Music, MusicFile, MusicInfo, MusicMeta } from './declare';
+import bg from './assets/bg.png';
 
 type MusicStore = {
   id: number
@@ -19,6 +20,7 @@ type MusicStore = {
   previousVolume: number
   isMuted: boolean
   sequenceType: number
+  imageLoaded: boolean
 
   setId: (id: number) => void
   setMusic: (music?: Music) => void
@@ -36,6 +38,7 @@ type MusicStore = {
   setPreviousVolume: (previousVolume: number) => void
   setIsMuted: (isMuted: boolean) => void
   setSequencType: (sequenceType: number) => void
+  setImageLoaded: (imageLoaded: boolean) => void
 }
 
 export const useMusicStore = create<MusicStore>((set) => ({
@@ -46,7 +49,7 @@ export const useMusicStore = create<MusicStore>((set) => ({
   musicTitle: undefined,
   musicArtist: undefined,
   musicAlbum: undefined,
-  musicImage: undefined,
+  musicImage: bg,
   play: false,
   infoDisplay: false,
   openedFiles: [],
@@ -55,6 +58,7 @@ export const useMusicStore = create<MusicStore>((set) => ({
   previousVolume: 1,
   isMuted: false,
   sequenceType: SEQUENCE_TYPES.REPEAT,
+  imageLoaded: false,
 
   setId: (id: number) => set(() => {
     return {
@@ -84,4 +88,5 @@ export const useMusicStore = create<MusicStore>((set) => ({
   setSequencType: (sequenceType: number) => set(() => {
     return { sequenceType };
   }),
+  setImageLoaded: (imageLoaded: boolean) => set({ imageLoaded })
 }));
