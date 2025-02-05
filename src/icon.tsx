@@ -1,11 +1,11 @@
 
-// export const AlbumIcon = ({ size = 20 }) => {
-//   return (
-//     <svg width={size} height={size} viewBox="0 -960 960 960" className='icon' fill="currentColor">
-//       <path d="M400-240q50 0 85-35t35-85v-280h120v-80H460v256q-14-8-29-12t-31-4q-50 0-85 35t-35 85q0 50 35 85t85 35Zm80 160q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z" />
-//     </svg>
-//   );
-// }
+export const AlbumIcon = ({ size = 18 }) => {
+  return (
+    <svg width={size} height={size} viewBox="0 -960 960 960" className='text-active' fill="currentColor">
+      <path d="M400-240q50 0 85-35t35-85v-280h120v-80H460v256q-14-8-29-12t-31-4q-50 0-85 35t-35 85q0 50 35 85t85 35Zm80 160q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z" />
+    </svg>
+  );
+}
 
 export const PlayIcon = ({ size = 24 }) => {
   return (
@@ -23,18 +23,23 @@ export const PauseIcon = ({ size = 24 }) => {
   );
 }
 
-export const DeleteIcon = ({ size = 20 }) => {
+export const DeleteIcon = ({ size = 18, onClick = () => { } }) => {
   return (
-    <svg width={size} height={size} viewBox="0 -960 960 960" fill="currentColor" className='icon'>
-      <path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z" />
+    <svg onClick={onClick} width={size} height={size} viewBox="0 -960 960 960" fill="currentColor" className='icon' role="img" aria-label="[title]">
+      <title>Remove from Playlist</title>
+      <path d="m336-280-56-56 144-144-144-143 56-56 144 144 143-144 56 56-144 143 144 144-56 56-143-144-144 144Z" />
     </svg>
   );
 }
 
 export const InfoIcon = ({ size = 20 }) => {
   return (
-    <svg width={size} height={size} viewBox="0 -960 960 960" fill="currentColor" className='icon'>
-      <path d="M440-280h80v-240h-80v240Zm40-320q17 0 28.5-11.5T520-640q0-17-11.5-28.5T480-680q-17 0-28.5 11.5T440-640q0 17 11.5 28.5T480-600Zm0 520q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z" />
+    // <svg width={size} height={size} viewBox="0 -960 960 960" fill="currentColor" className='icon' role="img" aria-label="[title]">
+    //   <title>Music Info</title>
+    //   <path d="M440-280h80v-240h-80v240Zm40-320q17 0 28.5-11.5T520-640q0-17-11.5-28.5T480-680q-17 0-28.5 11.5T440-640q0 17 11.5 28.5T480-600Zm0 520q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z" />
+    // </svg>
+    <svg width={size} height={size} viewBox="0 -960 960 960" fill="currentColor" className='icon' role="img" aria-label="[title]">
+      <title>Music Info</title><path d="M400-120q-66 0-113-47t-47-113q0-66 47-113t113-47q23 0 42.5 5.5T480-418v-422h240v160H560v400q0 66-47 113t-113 47Z" />
     </svg>
   );
 }
@@ -74,9 +79,13 @@ export const VolumeMuteIcon = ({ size = 20 }) => (
 );
 
 export const OpenFileIcon = ({ onClick = () => { }, size = 24 }) => (
-  <svg className="icon" onClick={onClick} width={size} height={size} viewBox="0 -960 960 960" fill="currentColor" role="img" aria-label="[title]">
-    <title>Open Files</title>
-    <path d="M240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v240h-80v-200H520v-200H240v640h360v80H240Zm638 15L760-183v89h-80v-226h226v80h-90l118 118-56 57Zm-638-95v-640 640Z" />
+  // <svg className="icon" onClick={onClick} width={size} height={size} viewBox="0 -960 960 960" fill="currentColor" role="img" aria-label="[title]">
+  //   <title>Open Files</title>
+  //   <path d="M240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v240h-80v-200H520v-200H240v640h360v80H240Zm638 15L760-183v89h-80v-226h226v80h-90l118 118-56 57Zm-638-95v-640 640Z" />
+  // </svg>
+  <svg onClick={onClick} width={size} height={size} viewBox="0 -960 960 960" fill="currentColor" className="icon" role="img" aria-label="[title]">
+    <title>Playlist Add</title>
+    <path d="M120-320v-80h280v80H120Zm0-160v-80h440v80H120Zm0-160v-80h440v80H120Zm520 480v-160H480v-80h160v-160h80v160h160v80H720v160h-80Z" />
   </svg>
 );
 
@@ -87,21 +96,33 @@ export const OpenFolderIcon = ({ onClick = () => { }, size = 24 }) => (
   </svg>
 );
 
+export const ClearAllIcon = ({ size = 24, onClick = () => { } }) => {
+  return (
+    <svg onClick={onClick} width={size} height={size} viewBox="0 -960 960 960" fill="currentColor" className='icon' role="img" aria-label="[title]">
+      <title>Clear All Playlist</title>
+      <path d="m576-80-56-56 104-104-104-104 56-56 104 104 104-104 56 56-104 104 104 104-56 56-104-104L576-80ZM120-320v-80h280v80H120Zm0-160v-80h440v80H120Zm0-160v-80h440v80H120Z" />
+    </svg>
+  );
+}
+
 export const RandomIcon = ({ size = 20, onClick = () => { } }) => (
-  <svg onClick={onClick} width={size} height={size} viewBox="0 -960 960 960" fill="currentColor" className='icon'>
+  <svg onClick={onClick} width={size} height={size} viewBox="0 -960 960 960" fill="currentColor" className='icon' role="img" aria-label="[title]">
+    <title>Random Playlist</title>
     <path d="M220-260q-92 0-156-64T0-480q0-92 64-156t156-64q37 0 71 13t61 37l68 62-60 54-62-56q-16-14-36-22t-42-8q-58 0-99 41t-41 99q0 58 41 99t99 41q22 0 42-8t36-22l310-280q27-24 61-37t71-13q92 0 156 64t64 156q0 92-64 156t-156 64q-37 0-71-13t-61-37l-68-62 60-54 62 56q16 14 36 22t42 8q58 0 99-41t41-99q0-58-41-99t-99-41q-22 0-42 8t-36 22L352-310q-27 24-61 37t-71 13Z" />
   </svg>
 );
 
 
 export const RepeatIcon = ({ size = 20, onClick = () => { } }) => (
-  <svg onClick={onClick} width={size} height={size} viewBox="0 -960 960 960" fill="currentColor" className="icon">
+  <svg onClick={onClick} width={size} height={size} viewBox="0 -960 960 960" fill="currentColor" className="icon" role="img" aria-label="[title]">
+    <title>Repeat Playlist</title>
     <path d="M280-80 120-240l160-160 56 58-62 62h406v-160h80v240H274l62 62-56 58Zm-80-440v-240h486l-62-62 56-58 160 160-160 160-56-58 62-62H280v160h-80Z" />
   </svg>
 );
 
 export const RepeatOneIcon = ({ size = 20, onClick = () => { }, }) => (
-  <svg onClick={onClick} width={size} height={size} viewBox="0 -960 960 960" fill="currentColor" className="icon">
+  <svg onClick={onClick} width={size} height={size} viewBox="0 -960 960 960" fill="currentColor" className="icon" role="img" aria-label="[title]">
+    <title>Repeat One</title>
     <path d="M460-360v-180h-60v-60h120v240h-60ZM280-80 120-240l160-160 56 58-62 62h406v-160h80v240H274l62 62-56 58Zm-80-440v-240h486l-62-62 56-58 160 160-160 160-56-58 62-62H280v160h-80Z" />
   </svg>
 );

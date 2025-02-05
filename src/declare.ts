@@ -1,26 +1,26 @@
 export interface MusicInfo {
-  codec: string;
-  codec_short: string;
-  sample_rate: string;
-  start_time: string;
-  duration: string;
-  frames: string;
-  time_base: string;
-  encoder_delay: string;
-  encoder_padding: string;
-  sample_format: string;
-  bits_per_sample: string;
-  channel: string;
-  channel_map: string;
-  channel_layout: string;
-  language: string;
+  codec?: string;
+  codec_short?: string;
+  sample_rate?: string;
+  start_time?: string;
+  duration?: string;
+  frames?: string;
+  time_base?: string;
+  encoder_delay?: string;
+  encoder_padding?: string;
+  sample_format?: string;
+  bits_per_sample?: string;
+  channel?: string;
+  channel_map?: string;
+  channel_layout?: string;
+  language?: string;
 }
 
-export interface Music {
+export interface PlayState {
   id: number;
   name: string;
   path: string;
-  duration: string;
+  left_duration: string;
   progress: string;
 }
 
@@ -76,4 +76,15 @@ export interface Result {
   currency: string;
   primaryGenreName: string;
   isStreamable: boolean;
+}
+
+export interface MusicSetting {
+  volume: number,
+  sequence_type: number,
+}
+
+export interface MusicError {
+  id: number,
+  name: string,
+  message: string,
 }

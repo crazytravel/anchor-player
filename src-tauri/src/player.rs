@@ -18,7 +18,7 @@ use symphonia::core::probe::{Hint, ProbeResult};
 use symphonia::core::units::{Time, TimeBase};
 use tauri::{AppHandle, Manager};
 
-use crate::music::{Music, MusicImage, MusicMeta};
+use crate::music::{MusicImage, MusicMeta, PlayState};
 use crate::{music, output, AppState};
 use log::{info, warn};
 use music::MusicInfo;
@@ -27,7 +27,7 @@ pub fn start_play(
     app: &AppHandle,
     time_position: Option<Time>,
     music_path: &str,
-    music: &Sender<Music>,
+    play_state: &Sender<PlayState>,
     music_info_tx: &Sender<MusicInfo>,
     music_meta_tx: &Sender<MusicMeta>,
     music_image_tx: &Sender<MusicImage>,
@@ -140,7 +140,7 @@ pub fn start_play(
                 time_position,
                 &decode_opts,
                 no_progress,
-                music,
+                play_state,
                 music_meta_tx,
                 app,
             )
@@ -201,7 +201,7 @@ fn play(
     seek: Option<Time>,
     decode_opts: &DecoderOptions,
     no_progress: bool,
-    music_tx: &Sender<Music>,
+    play_state_tx: &Sender<PlayState>,
     music_meta_tx: &Sender<MusicMeta>,
     app: &AppHandle,
 ) -> Result<i32> {
@@ -259,7 +259,7 @@ fn play(
             track_info,
             decode_opts,
             no_progress,
-            music_tx,
+            play_state_tx,
             music_meta_tx,
             app,
         ) {
@@ -300,7 +300,7 @@ fn play_track(
     play_opts: PlayTrackOptions,
     decode_opts: &DecoderOptions,
     no_progress: bool,
-    music_tx: &Sender<Music>,
+    play_state_tx: &Sender<PlayState>,
     music_meta_tx: &Sender<MusicMeta>,
     app: &AppHandle,
 ) -> Result<i32> {
@@ -402,7 +402,7 @@ fn play_track(
                         }
                         let ts = packet.ts();
                         let mut progress = "".to_string();
-                        let mut duration = "".to_string();
+                        let mut left_duration = "".to_string();
                         if let Some(tb) = tb {
                             let t = tb.calc_time(ts);
 
@@ -419,7 +419,7 @@ fn play_track(
                                 let mins = (t.seconds % (60 * 60)) / 60;
                                 let secs = f64::from((t.seconds % 60) as u32) + t.frac;
 
-                                duration = format!("{:}:{:0>2}:{:0>4.1}", hours, mins, secs);
+                                left_duration = format!("{:}:{:0>2}:{:0>4.1}", hours, mins, secs);
                             }
 
                             {
@@ -428,9 +428,13 @@ fn play_track(
                                 state.time_position = Some(t);
                             }
                         }
-                        music_tx
-                            .send(Music::new(
-                                music_id, music_name, music_path, duration, progress,
+                        play_state_tx
+                            .send(PlayState::new(
+                                music_id,
+                                music_name,
+                                music_path,
+                                progress,
+                                left_duration,
                             ))
                             .expect("send the msg to frontend failed!");
                     }

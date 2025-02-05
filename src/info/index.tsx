@@ -1,4 +1,5 @@
 import { MusicInfo } from '../declare.ts';
+import { DeleteIcon } from '../icon.tsx';
 
 import './index.css';
 
@@ -12,7 +13,7 @@ function Info({ musicInfo, onClick, className }: InfoProps) {
   return (
     <div className={className}>
       <div className="info-bar">
-        <span onClick={onClick}>x</span>
+        <DeleteIcon onClick={onClick} />
       </div>
       <div className="row">
         <div className="label">Codec:</div>

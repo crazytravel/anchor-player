@@ -7,10 +7,12 @@ import './App.css';
 import bg from './assets/bg.png';
 
 import { listen } from '@tauri-apps/api/event';
-import { Music, MusicFile, MusicInfo, MusicInfoRes, MusicMeta } from './declare.ts';
+import { PlayState, MusicFile, MusicInfo, MusicInfoRes, MusicMeta, MusicSetting, MusicError } from './declare.ts';
 import Info from './info';
 import {
+  AlbumIcon,
   DeleteIcon,
+  ClearAllIcon,
   InfoIcon,
   NextIcon,
   OpenFileIcon,
@@ -28,13 +30,14 @@ import {
 
 import { SEQUENCE_TYPES, SUPPORTED_FORMATS } from './constants';
 import { useMusicStore } from './store';
+import { Message } from './components.tsx';
 
 
 function App() {
 
   const {
     id,
-    music,
+    playState: music,
     musicInfo,
     musicMeta,
     musicTitle,
@@ -49,8 +52,9 @@ function App() {
     previousVolume,
     isMuted,
     sequenceType,
+    errors,
     setId,
-    setMusic,
+    setPlayState,
     setMusicInfo,
     setMusicMeta,
     setMusicTitle,
@@ -65,7 +69,18 @@ function App() {
     setPreviousVolume,
     setIsMuted,
     setSequencType,
+    setErrors
   } = useMusicStore();
+
+  function debounce<T extends (...args: any[]) => Promise<any>>(func: T, wait: number): (...args: Parameters<T>) => void {
+    let timeout: ReturnType<typeof setTimeout>;
+    return function (this: ThisParameterType<T>, ...args: Parameters<T>) {
+      clearTimeout(timeout);
+      timeout = setTimeout(async () => {
+        await func.apply(this, args);
+      }, wait);
+    };
+  }
 
   const fetchMusicInfo = async (keyword: string) => {
     // Send a GET request
@@ -75,8 +90,6 @@ function App() {
         'Content-Type': 'application/json'
       }
     });
-    console.log(response.status); // e.g. 200
-    console.log(response.statusText); // e.g. "OK"
     if (response.status !== 200) {
       return;
     }
@@ -93,7 +106,6 @@ function App() {
         return;
       }
       const result = results[0];
-
       if (result.artworkUrl100) {
         const url = result.artworkUrl100.replace('100x100', '600x600');
         setMusicImage(url);
@@ -142,15 +154,29 @@ function App() {
       setMusicInfo(undefined);
       setId(id);
       await invoke('play', { id });
-      setPlay(true);
+      // setPlay(true);
     } catch (error) {
       console.error('Failed to start playback:', error);
-      setPlay(false);
+      // setPlay(false);
     }
   };
 
   async function pause() {
     setPlay(false);
+    calculateProgress('0:00:00.0', '0:00:00.0');
+    await invoke('pause');
+  }
+
+  async function stop() {
+    setPlay(false);
+    setId(-1);
+    setMusicInfo(undefined);
+    setMusicMeta(undefined);
+    setMusicTitle(undefined);
+    setMusicArtist(undefined);
+    setMusicAlbum(undefined);
+    setPlayState(undefined);
+    setMusicImage(bg);
     calculateProgress('0:00:00.0', '0:00:00.0');
     await invoke('pause');
   }
@@ -172,7 +198,7 @@ function App() {
   const playPrevious = async () => {
     setMusicArtist(undefined);
     setMusicAlbum(undefined);
-    await invoke('play_prevois', {});
+    await invoke('play_previous', {});
   };
 
   const playNext = async () => {
@@ -214,20 +240,38 @@ function App() {
     );
   };
 
-  const calculateProgress = (progress?: string, duration?: string): number => {
-    if (!progress || !duration) return 0;
+  const calculateProgress = (progress?: string, left_duration?: string): number => {
+    if (!progress || !left_duration) return 0;
 
     // Convert time string to seconds
     const progressSeconds = timeToSeconds(progress);
-    const durationSeconds = timeToSeconds(duration);
+    const leftDurationSeconds = timeToSeconds(left_duration);
 
-    if (durationSeconds === 0) return 0;
-    return (progressSeconds / (progressSeconds + durationSeconds)) * 100;
+    if (leftDurationSeconds === 0) return 0;
+    return (progressSeconds / (progressSeconds + leftDurationSeconds)) * 100;
   };
 
-  const initFiles = (files: string[]): MusicFile[] => {
+  const calDuration = (progress?: string, left_duration?: string): string => {
+    if (!progress || !left_duration) return '0:00:00';
+    const progressSeconds = timeToSeconds(progress);
+    const leftDurationSeconds = timeToSeconds(left_duration);
+    const duration = progressSeconds + leftDurationSeconds;
+    return formatSeconds(duration);
+  }
+
+  const formatSeconds = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    const formattedMinutes = String(minutes).padStart(2, '0');
+    const formattedSeconds = String(secs).padStart(2, '0');
+
+    return `${hours}:${formattedMinutes}:${formattedSeconds}`;
+  }
+
+  const initFiles = (files: string[], initialNo: number): MusicFile[] => {
     return files.map((file, index) => {
-      return { id: index, name: extractMusicName(file), path: file }
+      return { id: index + initialNo, name: extractMusicName(file), path: file }
     })
   }
 
@@ -244,18 +288,13 @@ function App() {
       ],
     });
     if (files) {
-      setOpenedFiles([...files]);
-      const musicFiles = initFiles(files);
-      setPlay(false);
-      setId(-1);
-      setMusicTitle(undefined);
-      setMusicArtist(undefined);
-      setMusicAlbum(undefined);
-      setMusic(undefined);
-      setMusicImage(bg);
-      setMusicList(musicFiles);
-      await pause();
-      await invoke('set_music_files', { musicFiles: musicFiles })
+      console.log('musicList:', musicList)
+      const maxId = musicList.length > 0 ? musicList[musicList.length - 1].id + 1 : 0;
+      setOpenedFiles([...openedFiles, ...files]);
+      const musicFiles = initFiles(files, maxId);
+      console.log('musicFiles:', musicFiles)
+      setMusicList([...musicList, ...musicFiles]);
+      await invoke('playlist_add', { musicFiles: [...musicList, ...musicFiles] })
     }
   };
 
@@ -267,18 +306,23 @@ function App() {
     if (paths) {
       const files = await invoke<string[]>('list_files', { dirs: paths });
       if (files.length > 0) {
-        setOpenedFiles([...files]);
-        const musicFiles = initFiles(files);
-        setPlay(false);
-        setId(-1);
-        setMusicTitle(undefined);
-        setMusicArtist(undefined);
-        setMusicAlbum(undefined);
-        setMusic(undefined);
-        setMusicImage(bg);
-        setMusicList(musicFiles);
-        await pause();
-        await invoke('set_music_files', { musicFiles: musicFiles })
+        const maxId = musicList.length > 0 ? musicList[musicList.length - 1].id + 1 : 0;
+        setOpenedFiles([...openedFiles, ...files]);
+        const musicFiles = initFiles(files, maxId);
+        setMusicList([...musicList, ...musicFiles]);
+        await invoke('playlist_add', { musicFiles: [...musicList, ...musicFiles] })
+        // setOpenedFiles([...files]);
+        // const musicFiles = initFiles(files, 0);
+        // setPlay(false);
+        // setId(-1);
+        // setMusicTitle(undefined);
+        // setMusicArtist(undefined);
+        // setMusicAlbum(undefined);
+        // setMusic(undefined);
+        // setMusicImage(bg);
+        // setMusicList(musicFiles);
+        // await pause();
+        // await invoke('set_music_files', { musicFiles: musicFiles })
       }
     }
   };
@@ -322,22 +366,21 @@ function App() {
     await invoke('delete_from_playlist', { id: theId });
   };
 
-  const seek = async (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!music || !music?.duration) {
+  const seek = async (rect: DOMRect, clientX: number) => {
+    if (!music || !music?.left_duration) {
       return;
     }
-    const container = e.currentTarget;
-    const rect = container.getBoundingClientRect();
-    const x = e.clientX - rect.left;
+
+    const x = clientX - rect.left;
     const percentage = (x / rect.width) * 100;
     const progressSeconds = timeToSeconds(
       music?.progress || '0:00:00.0',
     );
-    const durationSeconds = timeToSeconds(
-      music?.duration || '0:00:00.0',
+    const leftDurationSeconds = timeToSeconds(
+      music?.left_duration || '0:00:00.0',
     );
     setPlay(true);
-    const newTime = (percentage / 100) * (progressSeconds + durationSeconds);
+    const newTime = (percentage / 100) * (progressSeconds + leftDurationSeconds);
     await invoke('play', { id: -1, time: newTime }).catch(console.error);
   }
 
@@ -359,15 +402,39 @@ function App() {
     // });
   }
 
+  const clearList = async () => {
+    if (!openedFiles || openedFiles.length === 0) {
+      return;
+    }
+    await stop();
+    setOpenedFiles([]);
+    setMusicList([]);
+    await invoke('clear_playlist', {});
+  }
+
   useEffect(() => {
+    const unErrorListen = listen<MusicError>('error', (event) => {
+      const error = event.payload;
+      setId(error.id);
+      setMusicTitle(error.name);
+      setPlay(false);
+      setMusicInfo(undefined);
+      setMusicMeta(undefined);
+      setMusicTitle(undefined);
+      setMusicArtist(undefined);
+      setMusicAlbum(undefined);
+      setErrors([...errors, error]);
+    });
+
     const unMusicInfoListen = listen<MusicInfo>('music-info', (event) => {
+      setPlay(true);
       setMusicInfo(event.payload);
     });
 
-    const unMusicListen = listen<Music>('music', (event) => {
+    const unMusicListen = listen<PlayState>('play-state', (event) => {
       setId(event.payload.id);
-      setMusic(event.payload);
-      calculateProgress(event.payload.progress, event.payload.duration);
+      setPlayState(event.payload);
+      calculateProgress(event.payload.progress, event.payload.left_duration);
     });
 
     const unFinishedListen = listen<number>('finished', async (event) => {
@@ -402,6 +469,32 @@ function App() {
       await invoke('show_main_window', {});
     }
 
+    const loadSettings = async () => {
+      const settings = await invoke<MusicSetting>('load_settings', {});
+      console.log('settings:', settings);
+      setVolume(settings.volume);
+      console.log('settings.sequenceType:', settings.sequence_type)
+      setSequencType(settings.sequence_type)
+    }
+    const loadPlaylist = async () => {
+      const playlist = await invoke<MusicFile[]>('load_playlist', {});
+      console.log('playlist:', playlist)
+      setOpenedFiles(playlist.map((file) => file.path));
+      setMusicList(playlist);
+    }
+    const loadPlayState = async () => {
+      const playState = await invoke<PlayState>('load_play_state', {});
+      console.log("playState:", playState);
+      if (!playState) return;
+      setId(playState.id);
+      setPlayState(playState);
+      let musicInfo: MusicInfo = {
+        duration: calDuration(playState.progress, playState.left_duration)
+      }
+      setMusicInfo(musicInfo);
+      setMusicTitle(playState.name);
+    }
+
     showWindow();
     registerShortcuts();
     // Production environment, cancel right-click menu
@@ -410,15 +503,35 @@ function App() {
         event.preventDefault()
       }
     }
+    loadSettings();
+    loadPlaylist();
+    loadPlayState();
+
     return () => {
       unMusicInfoListen.then(f => f());
       unMusicListen.then(f => f());
       unFinishedListen.then(f => f());
       unListenedMeta.then(f => f());
       // unListenedImage.then(f => f());
+      unErrorListen.then(f => f());
     }
   }, []);
 
+  useEffect(() => {
+    // Clear errors after 5 seconds
+    errors.forEach((_error, index) => {
+      setTimeout(() => {
+        errors.pop()
+        setErrors([...errors])
+      }, (index + 1) * 5000)
+    })
+  }, [errors]);
+
+  const debouncedChangeMusic = debounce(changeMusic, 300);
+  const debouncedSeek = debounce(seek, 300);
+  const debouncedStartPlayPrevious = debounce(startPlayPrevious, 300);
+  const debouncedStartPlayNext = debounce(startPlayNext, 300);
+  const debouncedPlayControl = debounce(playControl, 300);
 
   return (
     <div className="flex flex-col w-full h-full m-0 p-0 relative">
@@ -438,32 +551,34 @@ function App() {
         <div className="play-container">
           <div className="list-wrapper">
             <div className="toolbar">
-              <OpenFileIcon onClick={openFile} />
-              <div className="w-3" />
-              <OpenFolderIcon onClick={openFolder} />
+              <div className='flex'>
+                <OpenFolderIcon onClick={openFolder} />
+                <div className="w-3" />
+                <OpenFileIcon onClick={openFile} />
+              </div>
+              <div>
+                <ClearAllIcon onClick={clearList} />
+              </div>
             </div>
             <ul className="list">
               {openedFiles?.map((file, index) => (
                 <li
                   key={index}
-                  className={(musicList[index].id === id && play && 'active') || ''}
+                  className={(musicList[index].id === id && 'text-active') || ''}
                 >
                   <div
-                    onDoubleClick={() => changeMusic(index)}
+                    onDoubleClick={() => debouncedChangeMusic(index)}
                     className="file-name cursor-default"
                   >
                     {file.split('/')[file.split('/').length - 1]}
                   </div>
-                  <div
-                    className="statusIcon"
-                    onClick={async () => deleteFromPlayList(index)}
-                  >
-                    {(musicList[index].id !== id || !play) && <DeleteIcon />}
-                    {/* {musicList[index].id === id && play && (
+                  <div className="statusIcon">
+                    {(musicList[index].id !== id || !play) && <DeleteIcon onClick={async () => deleteFromPlayList(index)} />}
+                    {musicList[index].id === id && play && (
                       <span className="rotate">
                         <AlbumIcon />
                       </span>
-                    )} */}
+                    )}
                   </div>
                 </li>
               ))}
@@ -499,12 +614,16 @@ function App() {
         <div className="bottom-container">
           <div
             className="progress-bar-container"
-            onClick={seek}
+            onClick={(e) => {
+              const container = e.currentTarget;
+              const rect = container.getBoundingClientRect();
+              debouncedSeek(rect, e.clientX)
+            }}
           >
             <div
               className="progress-bar"
               style={{
-                width: `${calculateProgress(music?.progress, music?.duration)}% `,
+                width: `${calculateProgress(music?.progress, music?.left_duration)}% `,
               }}
             />
           </div>
@@ -516,7 +635,7 @@ function App() {
                 </div>
                 &nbsp;/&nbsp;
                 <div className="duration">
-                  {music?.duration ? formatTime(music.duration) : '0:00:00'}
+                  {musicInfo?.duration ? formatTime(musicInfo?.duration) : '0:00:00'}
                 </div>
               </div>
               <div className="seq-wrapper" onClick={changeSequenceType}>
@@ -528,13 +647,13 @@ function App() {
               </div>
             </div>
             <div className="btn">
-              <div className="previous" onClick={() => startPlayPrevious()}>
+              <div className="previous" onClick={debouncedStartPlayPrevious}>
                 <PreviousIcon />
               </div>
-              <div className="play" onClick={playControl}>
+              <div className="play" onClick={debouncedPlayControl}>
                 {play ? <PauseIcon size={50} /> : <PlayIcon size={50} />}
               </div>
-              <div className="next" onClick={() => startPlayNext()}>
+              <div className="next" onClick={debouncedStartPlayNext}>
                 <NextIcon />
               </div>
             </div>
@@ -572,8 +691,17 @@ function App() {
         <Info
           onClick={() => setInfoDisplay(false)}
           musicInfo={musicInfo}
-          className={infoDisplay ? 'music-info bg-quinary' : 'music-info bg-quinary hide'}
+          className={infoDisplay ? 'music-info bg-panel' : 'music-info bg-panel hide'}
         />
+        <div className='absolute z-10 right-0 top-0'>
+          {
+            errors.map((error, index) => (
+              <Message key={index} message={error} onClose={() => {
+                setErrors([...errors.slice(0, index), ...errors.slice(index + 1)])
+              }} />
+            ))
+          }
+        </div>
       </main >
     </div >
   );

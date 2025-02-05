@@ -5,17 +5,18 @@ export default {
     extend: {
       colors: {
         primary: '#1F2A3D',
-        list: '#1D1D1D',
-        secondary: '#E4E4E4',
+        list: 'rgba(29, 29, 29, 0.6)',
+        font: '#E4E4E4',
+        active: '#D34B60',
+        toolbar: 'rgba(29, 29, 29, 0.8)',
+        panel: 'rgba(29, 29, 29, 0.95)',
         tertiary: '#A6D600',
         quaternary: '#666666',
         quinary: '#222222',
         senary: '#333333',
         septenary: '#535bf2',
         octonary: '#646cff',
-        nonary: '#D34B60',
         denary: '#292B36',
-        elevenary: '#D34B60',
         btn: '#4A90E2',
         'btn-hover': '#6AAEE'
       }

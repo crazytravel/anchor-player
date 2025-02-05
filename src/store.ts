@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import { SEQUENCE_TYPES } from './constants';
-import { Music, MusicFile, MusicInfo, MusicMeta } from './declare';
+import { PlayState, MusicFile, MusicInfo, MusicMeta, MusicError } from './declare';
 import bg from './assets/bg.png';
 
 type MusicStore = {
   id: number
-  music?: Music
+  playState?: PlayState
   musicInfo?: MusicInfo
   musicMeta?: MusicMeta
   musicTitle?: string
@@ -20,9 +20,10 @@ type MusicStore = {
   previousVolume: number
   isMuted: boolean
   sequenceType: number
+  errors: MusicError[]
 
   setId: (id: number) => void
-  setMusic: (music?: Music) => void
+  setPlayState: (playState?: PlayState) => void
   setMusicInfo: (musicInfo?: MusicInfo) => void
   setMusicMeta: (musicMeta?: MusicMeta) => void
   setMusicTitle: (musicTitle?: string) => void
@@ -37,11 +38,12 @@ type MusicStore = {
   setPreviousVolume: (previousVolume: number) => void
   setIsMuted: (isMuted: boolean) => void
   setSequencType: (sequenceType: number) => void
+  setErrors: (errors: MusicError[]) => void
 }
 
 export const useMusicStore = create<MusicStore>((set) => ({
   id: 0,
-  music: undefined,
+  playState: undefined,
   musicInfo: undefined,
   musicMeta: undefined,
   musicTitle: undefined,
@@ -56,13 +58,14 @@ export const useMusicStore = create<MusicStore>((set) => ({
   previousVolume: 1,
   isMuted: false,
   sequenceType: SEQUENCE_TYPES.REPEAT,
+  errors: [],
 
   setId: (id: number) => set(() => {
     return {
       id
     }
   }),
-  setMusic: (music?: Music) => set({ music }),
+  setPlayState: (playState?: PlayState) => set({ playState: playState }),
   setMusicInfo: (musicInfo?: MusicInfo) => set({ musicInfo }),
   setMusicMeta: (musicMeta?: MusicMeta) => set(() => { return { musicMeta } }),
   setMusicTitle: (musicTitle?: string) => set(() => { return { musicTitle } }),
@@ -85,4 +88,7 @@ export const useMusicStore = create<MusicStore>((set) => ({
   setSequencType: (sequenceType: number) => set(() => {
     return { sequenceType };
   }),
+  setErrors: (errors: MusicError[]) => set(() => {
+    return { errors };
+  })
 }));
