@@ -55,10 +55,10 @@ function Info({ musicInfo, onClick, className }: InfoProps) {
         <div className="label">Bits per Sample:</div>
         <div className="col">{musicInfo?.bits_per_sample}bit</div>
       </div>
-      <div className="row">
+      {/* <div className="row">
         <div className="label">Channel:</div>
         <div className="col">{musicInfo?.channel}</div>
-      </div>
+      </div> */}
       {/*<div className="row">*/}
       {/*    <div className="label">Channel Map:</div>*/}
       {/*    <div className="col">{musicInfo?.channel_map}</div>*/}

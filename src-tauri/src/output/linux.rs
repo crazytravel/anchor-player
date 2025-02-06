@@ -1,5 +1,4 @@
 use super::Result;
-use std::sync::RwLock;
 use symphonia::core::audio::*;
 use symphonia::core::units::Duration;
 
@@ -7,8 +6,9 @@ use crate::output::{AudioOutput, AudioOutputError};
 use libpulse_binding as pulse;
 use libpulse_simple_binding as psimple;
 
-use crate::AppState;
+use crate::state::VolumeState;
 use log::{error, warn};
+use tauri::async_runtime::Mutex;
 use tauri::Manager;
 
 pub struct PulseAudioOutput {
@@ -65,14 +65,6 @@ impl PulseAudioOutput {
             }
         }
     }
-
-    fn handle_stream_state(&self, app: &tauri::AppHandle) {
-        let state_handle = app.state::<RwLock<AppState>>();
-        let state = state_handle.read().unwrap();
-        if state.paused {
-            let _ = self.pa.drain();
-        }
-    }
 }
 
 impl AudioOutput for PulseAudioOutput {
@@ -82,22 +74,13 @@ impl AudioOutput for PulseAudioOutput {
             return Ok(());
         }
 
-        self.handle_stream_state(app);
-
-        // If paused, just return without writing
-        let state_handle = app.state::<RwLock<AppState>>();
-        let state = state_handle.read().unwrap();
-        if state.paused {
-            return Ok(());
-        }
-
         // Interleave samples from the audio buffer into the sample buffer.
         self.sample_buf.copy_interleaved_ref(decoded);
 
         // Apply volume scaling.
-        let state_handle = app.state::<RwLock<AppState>>();
-        let state = state_handle.read().unwrap();
-        let volume = state.volume;
+        let volume_state = app.state::<Mutex<VolumeState>>();
+        let volume_state = volume_state.lock().unwrap();
+        let volume = volume_state.get();
         if volume != 1.0 {
             let mut samples = self.sample_buf.as_bytes();
             for sample in samples.chunks_exact_mut(4) {

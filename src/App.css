@@ -341,14 +341,14 @@ a:hover {
     left: 0;
     right: 0;
     bottom: 0;
-    margin: 1em;
     border-radius: 0.6em;
     transition: 0.75s;
-    padding-bottom: 0.5em;
+    padding-bottom: 2em;
+    margin: 1em;
 }
 
 .hide {
-    transform: translateY(110%);
+    transform: translateY(115%);
 }
 
 .volume-control {

@@ -1,8 +1,8 @@
-use std::sync::RwLock;
+use std::sync::Mutex;
 
 use super::Result;
 use crate::resampler::Resampler;
-use crate::AppState;
+use crate::state::VolumeState;
 
 use symphonia::core::audio::{AudioBufferRef, RawSample, SampleBuffer, SignalSpec};
 use symphonia::core::conv::{ConvertibleSample, IntoSample};
@@ -149,31 +149,12 @@ impl<T: AudioOutputSample> CpalAudioOutputImpl<T> {
             resampler,
         }))
     }
-
-    fn handle_stream_state(&self, app: &AppHandle) {
-        let state_handle = app.state::<RwLock<AppState>>();
-        let state = state_handle.read().unwrap();
-        if state.paused {
-            let _ = self.stream.pause();
-        } else {
-            let _ = self.stream.play();
-        }
-    }
 }
 
 impl<T: AudioOutputSample> AudioOutput for CpalAudioOutputImpl<T> {
     fn write(&mut self, decoded: AudioBufferRef<'_>, app: &AppHandle) -> Result<()> {
         // Do nothing if there are no audio frames.
         if decoded.frames() == 0 {
-            return Ok(());
-        }
-
-        self.handle_stream_state(app);
-
-        // If paused, just return without writing
-        let state_handle = app.state::<RwLock<AppState>>();
-        let state = state_handle.read().unwrap();
-        if state.paused {
             return Ok(());
         }
 
@@ -190,9 +171,9 @@ impl<T: AudioOutputSample> AudioOutput for CpalAudioOutputImpl<T> {
             self.sample_buf.samples().to_vec()
         };
         // Apply volume
-        let state_handle = app.state::<RwLock<AppState>>();
-        let state = state_handle.read().unwrap();
-        let volume = state.volume;
+        let volume_state = app.state::<Mutex<VolumeState>>();
+        let volume_state = volume_state.lock().unwrap();
+        let volume = volume_state.get();
         if volume != 1.0 {
             for sample in samples.iter_mut() {
                 let float_sample: f32 = (*sample).into_sample();

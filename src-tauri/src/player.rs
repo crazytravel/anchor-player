@@ -5,7 +5,7 @@
 use std::fs::File;
 use std::path::Path;
 use std::sync::mpsc::Sender;
-use std::sync::RwLock;
+use std::sync::Mutex;
 
 use base64::engine::general_purpose;
 use base64::Engine;
@@ -19,9 +19,123 @@ use symphonia::core::units::{Time, TimeBase};
 use tauri::{AppHandle, Manager};
 
 use crate::music::{MusicImage, MusicMeta, PlayState};
-use crate::{music, output, AppState};
+use crate::state::{IdState, MusicFilesState, PauseState, TimePositionState};
+use crate::{music, output};
 use log::{info, warn};
 use music::MusicInfo;
+
+// // Player struct
+// pub struct Player {
+//     pub output: Box<dyn output::AudioOutput>,
+//     pub play_state_tx: Sender<PlayState>,
+// }
+
+// impl Player {
+//     pub fn new(play_state_tx: Sender<PlayState>) -> Self {
+//         Self {
+//             output,
+//             play_state_tx,
+//         }
+//     }
+// }
+//
+
+pub fn load_metadata(
+    app: &AppHandle,
+    music_path: &str,
+    music_info_tx: &Sender<MusicInfo>,
+    music_meta_tx: &Sender<MusicMeta>,
+    music_image_tx: &Sender<MusicImage>,
+) -> Result<()> {
+    let path = Path::new(music_path);
+    // Create a hint to help the format registry guess what format reader is appropriate.
+    let hint = Hint::new();
+    let source = Box::new(File::open(path)?);
+
+    // Create the media source stream using the boxed media source from above.
+    let mss: MediaSourceStream = MediaSourceStream::new(source, Default::default());
+
+    // Use the default options for format readers other than for gapless playback.
+    let format_opts = Default::default();
+
+    // Use the default options for metadata readers.
+    let metadata_opts: MetadataOptions = Default::default();
+
+    // Probe the media source stream for metadata and get the format reader.
+    match symphonia::default::get_probe().format(&hint, mss, &format_opts, &metadata_opts) {
+        Ok(mut probed) => {
+            dump_visuals(&mut probed, music_image_tx);
+
+            let tracks = probed.format.tracks();
+            if !tracks.is_empty() {
+                for track in tracks.iter() {
+                    let params = &track.codec_params;
+
+                    let mut music_info = MusicInfo::new();
+                    if let Some(codec) = symphonia::default::get_codecs().get_codec(params.codec) {
+                        music_info.codec = codec.long_name.to_string();
+                        music_info.codec_short = codec.short_name.to_string();
+                    }
+                    if let Some(rate) = params.sample_rate {
+                        music_info.sample_rate = rate.to_string();
+                    }
+                    if params.start_ts > 0 {
+                        if let Some(tb) = params.time_base {
+                            music_info.start_time =
+                                format!("{} ({})", fmt_time(params.start_ts, tb), params.start_ts);
+                        } else {
+                            music_info.start_time = params.start_ts.to_string();
+                        }
+                    }
+                    if let Some(n_frames) = params.n_frames {
+                        if let Some(tb) = params.time_base {
+                            music_info.duration =
+                                format!("{} ({})", fmt_time(n_frames, tb), n_frames);
+                        } else {
+                            music_info.frames = n_frames.to_string();
+                        }
+                    }
+                    if let Some(tb) = params.time_base {
+                        music_info.time_base = tb.to_string();
+                    }
+                    if let Some(padding) = params.delay {
+                        music_info.encoder_delay = padding.to_string();
+                    }
+                    if let Some(padding) = params.padding {
+                        music_info.encoder_padding = padding.to_string();
+                    }
+                    if let Some(sample_format) = params.sample_format {
+                        music_info.sample_format = format!("{:?}", sample_format);
+                    }
+                    if let Some(bits_per) = params.bits_per_sample {
+                        music_info.bits_per_sample = bits_per.to_string();
+                    }
+                    if let Some(chan) = params.channels {
+                        music_info.channel = chan.count().to_string();
+                        music_info.channel_map = chan.to_string();
+                    }
+                    if let Some(channel_layout) = params.channel_layout {
+                        music_info.channel_layout = format!("{:?}", channel_layout);
+                    }
+                    if let Some(language) = &track.language {
+                        music_info.language = language.to_string();
+                    }
+                    music_info_tx
+                        .send(music_info)
+                        .expect("send the msg to frontend failed!");
+                }
+            }
+            // Playback mode.
+            print_format(&mut probed, music_meta_tx, app);
+            Ok(())
+        }
+        Err(err) => {
+            // The input was not supported by any format reader.
+            info!("the input is not supported");
+            Err(err)
+        }
+    }
+}
 
 pub fn start_play(
     app: &AppHandle,
@@ -72,7 +186,7 @@ pub fn start_play(
 
             let tracks = probed.format.tracks();
             if !tracks.is_empty() {
-                for (_, track) in tracks.iter().enumerate() {
+                for track in tracks.iter() {
                     let params = &track.codec_params;
 
                     let mut music_info = MusicInfo::new();
@@ -153,42 +267,6 @@ pub fn start_play(
     }
 }
 
-fn decode_only(mut reader: Box<dyn FormatReader>, decode_opts: &DecoderOptions) -> Result<i32> {
-    // Get the default track.
-    // TODO: Allow track selection.
-    let track = reader.default_track().unwrap();
-    let track_id = track.id;
-
-    // Create a decoder for the track.
-    let mut decoder = symphonia::default::get_codecs().make(&track.codec_params, decode_opts)?;
-
-    // Decode all packets, ignoring all decode errors.
-    let result = loop {
-        let packet = match reader.next_packet() {
-            Ok(packet) => packet,
-            Err(err) => break Err(err),
-        };
-
-        // If the packet does not belong to the selected track, skip over it.
-        if packet.track_id() != track_id {
-            continue;
-        }
-
-        // Decode the packet into audio samples.
-        match decoder.decode(&packet) {
-            Ok(_decoded) => continue,
-            Err(Error::DecodeError(err)) => warn!("decode error: {}", err),
-            Err(err) => break Err(err),
-        }
-    };
-
-    // Return if a fatal error occured.
-    ignore_end_of_stream_error(result)?;
-
-    // Finalize the decoder and return the verification result if it's been enabled.
-    do_verification(decoder.finalize())
-}
-
 #[derive(Copy, Clone)]
 struct PlayTrackOptions {
     track_id: u32,
@@ -224,7 +302,7 @@ fn play(
     // current approach will discard excess samples if seeking to a sample within a packet.
     let seek_ts = if let Some(seek) = seek {
         let seek_to = SeekTo::Time {
-            time: Time::from(seek),
+            time: seek,
             track_id: Some(track_id),
         };
 
@@ -284,9 +362,9 @@ fn play(
     // Flush the audio output to finish playing back any leftover samples.
     if let Some(audio_output) = audio_output.as_mut() {
         audio_output.flush();
-        let state_handle = app.state::<RwLock<AppState>>();
-        let state = state_handle.read().unwrap();
-        if state.paused {
+        let pause_state = app.state::<Mutex<PauseState>>();
+        let pause_state = pause_state.lock().unwrap();
+        if pause_state.pause {
             return Ok(0);
         }
         return Ok(100);
@@ -326,6 +404,14 @@ fn play_track(
 
     // Decode and play the packets belonging to the selected track.
     let result = loop {
+        {
+            let pause_state = app.state::<Mutex<PauseState>>();
+            let pause_state = pause_state.lock().unwrap();
+            if pause_state.pause {
+                break Ok(());
+            }
+        }
+
         // Get the next packet from the format reader.
         let packet = match reader.next_packet() {
             Ok(packet) => packet,
@@ -370,20 +456,22 @@ fn play_track(
                 // for the packet is >= the seeked position (0 if not seeking).
                 if packet.ts() >= play_opts.seek_ts {
                     if !no_progress {
-                        let paused;
+                        // let paused;
                         let music_id;
                         let music_name;
                         let music_path;
                         {
-                            let state_handle = app.state::<RwLock<AppState>>();
-                            let state = state_handle.read().unwrap();
-                            music_id = state.id;
+                            let id_state = app.state::<Mutex<IdState>>();
+                            let id_state = id_state.lock().unwrap();
+                            music_id = id_state.get();
                             if music_id == -1 {
                                 music_name = "".to_string();
                                 music_path = "".to_string();
                             } else {
-                                let music_file = state
-                                    .music_files
+                                let music_files_state = app.state::<Mutex<MusicFilesState>>();
+                                let music_files_state = music_files_state.lock().unwrap();
+                                let music_files = music_files_state.get();
+                                let music_file = music_files
                                     .iter()
                                     .find(|&music_file| music_file.id == music_id)
                                     .cloned();
@@ -395,10 +483,6 @@ fn play_track(
                                     music_path = "".to_string();
                                 }
                             }
-                            paused = state.paused;
-                        }
-                        if paused {
-                            return Ok(0);
                         }
                         let ts = packet.ts();
                         let mut progress = "".to_string();
@@ -423,9 +507,9 @@ fn play_track(
                             }
 
                             {
-                                let state_handle = app.state::<RwLock<AppState>>();
-                                let mut state = state_handle.write().unwrap();
-                                state.time_position = Some(t);
+                                let time_position_state = app.state::<Mutex<TimePositionState>>();
+                                let mut time_position_state = time_position_state.lock().unwrap();
+                                time_position_state.set(Some(t));
                             }
                         }
                         play_state_tx
@@ -508,7 +592,7 @@ fn dump_visual(visual: &Visual, music_image_tx: &Sender<MusicImage>) {
 
 fn dump_visuals(probed: &mut ProbeResult, music_image_tx: &Sender<MusicImage>) {
     if let Some(metadata) = probed.format.metadata().current() {
-        for (_, visual) in metadata.visuals().iter().enumerate() {
+        for visual in metadata.visuals().iter() {
             dump_visual(visual, music_image_tx);
         }
 
@@ -518,7 +602,7 @@ fn dump_visuals(probed: &mut ProbeResult, music_image_tx: &Sender<MusicImage>) {
             info!("not dumping additional visuals that were found while probing.");
         }
     } else if let Some(metadata) = probed.metadata.get().as_ref().and_then(|m| m.current()) {
-        for (_, visual) in metadata.visuals().iter().enumerate() {
+        for visual in metadata.visuals().iter() {
             dump_visual(visual, music_image_tx);
         }
     }
@@ -540,17 +624,17 @@ fn print_format(probed: &mut ProbeResult, music_meta_tx: &Sender<MusicMeta>, app
     } else {
         let title;
         {
-            let state_handle = app.state::<RwLock<AppState>>();
-            let state = state_handle.read().unwrap();
-            let index = match state
-                .music_files
+            let music_files_state = app.state::<Mutex<MusicFilesState>>();
+            let music_files_state = music_files_state.lock().unwrap();
+            let music_files = music_files_state.get();
+            let id_state = app.state::<Mutex<IdState>>();
+            let id_state = id_state.lock().unwrap();
+            let id = id_state.get();
+            let index = music_files
                 .iter()
-                .position(|music_file| music_file.id == state.id)
-            {
-                Some(index) => index,
-                None => 0,
-            };
-            title = state.music_files[index].name.clone();
+                .position(|music_file| music_file.id == id)
+                .unwrap_or(0);
+            title = music_files[index].name.clone();
         }
         let music_meta = MusicMeta::new(title);
         music_meta_tx

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { fetch } from '@tauri-apps/plugin-http';
@@ -34,7 +34,7 @@ import { Message } from './components.tsx';
 
 
 function App() {
-
+  const itemRefs = useRef<(HTMLLIElement | null)[]>([]);
   const {
     id,
     playState: music,
@@ -108,11 +108,19 @@ function App() {
       const result = results[0];
       if (result.artworkUrl100) {
         const url = result.artworkUrl100.replace('100x100', '600x600');
-        setMusicImage(url);
+        console.log('url:', url)
+        console.log('musicImage:', musicImage)
+        if (url !== musicImage) {
+          setMusicImage(url);
+        }
       }
       setMusicArtist(result.artistName);
       setMusicAlbum(result.collectionName);
       console.log('musicMeta:', musicMeta)
+    } else {
+      setMusicImage(bg);
+      setMusicArtist(undefined);
+      setMusicAlbum(undefined);
     }
   }
 
@@ -148,11 +156,11 @@ function App() {
   const start = async (id: number) => {
     console.log('start:', id)
     try {
-      setMusicArtist(undefined);
-      setMusicAlbum(undefined);
-      setMusicImage(bg);
+      // setMusicArtist(undefined);
+      // setMusicAlbum(undefined);
+      // setMusicImage(bg);
       setMusicInfo(undefined);
-      setId(id);
+      // setId(id);
       await invoke('play', { id });
       // setPlay(true);
     } catch (error) {
@@ -311,18 +319,6 @@ function App() {
         const musicFiles = initFiles(files, maxId);
         setMusicList([...musicList, ...musicFiles]);
         await invoke('playlist_add', { musicFiles: [...musicList, ...musicFiles] })
-        // setOpenedFiles([...files]);
-        // const musicFiles = initFiles(files, 0);
-        // setPlay(false);
-        // setId(-1);
-        // setMusicTitle(undefined);
-        // setMusicArtist(undefined);
-        // setMusicAlbum(undefined);
-        // setMusic(undefined);
-        // setMusicImage(bg);
-        // setMusicList(musicFiles);
-        // await pause();
-        // await invoke('set_music_files', { musicFiles: musicFiles })
       }
     }
   };
@@ -413,6 +409,12 @@ function App() {
   }
 
   useEffect(() => {
+
+    const unPauseActionListen = listen('paused-action', async (event) => {
+      console.log('event from paused-action: ', event)
+      await invoke('pause_action', { pauseState: event.payload })
+    });
+
     const unErrorListen = listen<MusicError>('error', (event) => {
       const error = event.payload;
       setId(error.id);
@@ -439,7 +441,7 @@ function App() {
 
     const unFinishedListen = listen<number>('finished', async (event) => {
       console.log('event from finished:', event.payload)
-      setMusicImage(bg);
+      // setMusicImage(bg);
       await finishPlay();
     });
 
@@ -448,8 +450,12 @@ function App() {
       if (!event.payload.title) return;
       setMusicTitle(event.payload.title);
       setMusicMeta(event.payload);
-      setMusicArtist(event.payload.artist);
-      setMusicAlbum(event.payload.album);
+      if (event.payload.artist) {
+        setMusicArtist(event.payload.artist);
+      }
+      if (event.payload.album) {
+        setMusicAlbum(event.payload.album);
+      }
       let keyword = event.payload.title;
       if (event.payload.album) {
         keyword = event.payload.album + '+' + keyword;
@@ -508,6 +514,7 @@ function App() {
     loadPlayState();
 
     return () => {
+      unPauseActionListen.then(f => f());
       unMusicInfoListen.then(f => f());
       unMusicListen.then(f => f());
       unFinishedListen.then(f => f());
@@ -527,11 +534,24 @@ function App() {
     })
   }, [errors]);
 
-  const debouncedChangeMusic = debounce(changeMusic, 300);
-  const debouncedSeek = debounce(seek, 300);
-  const debouncedStartPlayPrevious = debounce(startPlayPrevious, 300);
-  const debouncedStartPlayNext = debounce(startPlayNext, 300);
-  const debouncedPlayControl = debounce(playControl, 300);
+  useEffect(() => {
+    if (id === -1) {
+      return;
+    }
+    let index = musicList.findIndex((music) => music.id === id);
+    if (itemRefs.current[index]) {
+      itemRefs.current[index].scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }
+  }, [id]);
+
+  // const debouncedChangeMusic = debounce(changeMusic, 300);
+  // const debouncedSeek = debounce(seek, 300);
+  // const debouncedStartPlayPrevious = debounce(startPlayPrevious, 300);
+  // const debouncedStartPlayNext = debounce(startPlayNext, 300);
+  // const debouncedPlayControl = debounce(playControl, 300);
 
   return (
     <div className="flex flex-col w-full h-full m-0 p-0 relative">
@@ -564,10 +584,11 @@ function App() {
               {openedFiles?.map((file, index) => (
                 <li
                   key={index}
+                  ref={(el) => (itemRefs.current[index] = el)}
                   className={(musicList[index].id === id && 'text-active') || ''}
                 >
                   <div
-                    onDoubleClick={() => debouncedChangeMusic(index)}
+                    onDoubleClick={() => changeMusic(index)}
                     className="file-name cursor-default"
                   >
                     {file.split('/')[file.split('/').length - 1]}
@@ -617,7 +638,7 @@ function App() {
             onClick={(e) => {
               const container = e.currentTarget;
               const rect = container.getBoundingClientRect();
-              debouncedSeek(rect, e.clientX)
+              seek(rect, e.clientX)
             }}
           >
             <div
@@ -647,13 +668,13 @@ function App() {
               </div>
             </div>
             <div className="btn">
-              <div className="previous" onClick={debouncedStartPlayPrevious}>
+              <div className="previous" onClick={startPlayPrevious}>
                 <PreviousIcon />
               </div>
-              <div className="play" onClick={debouncedPlayControl}>
+              <div className="play" onClick={playControl}>
                 {play ? <PauseIcon size={50} /> : <PlayIcon size={50} />}
               </div>
-              <div className="next" onClick={debouncedStartPlayNext}>
+              <div className="next" onClick={startPlayNext}>
                 <NextIcon />
               </div>
             </div>
@@ -688,11 +709,14 @@ function App() {
             </div>
           </div>
         </div>
-        <Info
-          onClick={() => setInfoDisplay(false)}
-          musicInfo={musicInfo}
-          className={infoDisplay ? 'music-info bg-panel' : 'music-info bg-panel hide'}
-        />
+        {
+          infoDisplay && <Info
+            onClick={() => setInfoDisplay(false)}
+            musicInfo={musicInfo}
+            className="music-info bg-panel"
+          />
+        }
+
         <div className='absolute z-10 right-0 top-0'>
           {
             errors.map((error, index) => (

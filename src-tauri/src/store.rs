@@ -26,10 +26,7 @@ pub fn load_playlist(app: &AppHandle) -> Vec<MusicFile> {
     match playlist_store {
         Ok(store) => match store.get(PLAYLIST_STORE_KEY) {
             Some(data) => match data.as_array() {
-                Some(playlist) => playlist
-                    .iter()
-                    .map(|music| MusicFile::from_json(music))
-                    .collect(),
+                Some(playlist) => playlist.iter().map(MusicFile::from_json).collect(),
                 None => Vec::new(),
             },
             None => Vec::new(),
