@@ -1,19 +1,23 @@
+use rand::Rng;
 use state::{
     EventSource, IdState, MusicFilesState, PauseState, Payload, SequenceTypeState,
     TimePositionState, VolumeState,
 };
 use std::{
+    path::PathBuf,
     sync::{mpsc::channel, Mutex},
     thread::{self},
 };
 use store::{PLAYLIST_STORE_FILENAME, PLAY_STATE_STORE_FILENAME, SETTINGS_STORE_FILENAME};
 use symphonia::core::units::Time;
 use tauri_plugin_store::StoreExt;
+use uuid::Uuid;
 
 use log::error;
 use music::{MusicError, MusicFile, MusicImage, MusicInfo, MusicMeta, MusicSetting, PlayState};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+mod cache;
 mod file_reader;
 mod music;
 mod output;
@@ -23,11 +27,12 @@ mod resampler;
 mod state;
 mod store;
 
-fn play_music(id: i32, position: Option<Time>, app: AppHandle) {
+fn play_music(id: String, position: Option<Time>, app: AppHandle) {
+    println!("current_id:{:#?}", id);
     {
         let id_state = app.state::<Mutex<IdState>>();
         let mut id_state = id_state.lock().unwrap();
-        id_state.set(id);
+        id_state.set(Some(id.clone()));
     }
     {
         let pause_state = app.state::<Mutex<PauseState>>();
@@ -71,38 +76,49 @@ fn play_music(id: i32, position: Option<Time>, app: AppHandle) {
                 error!("{}", err.to_string().to_lowercase());
                 app.emit(
                     "error",
-                    MusicError::new(id, music_file.name, err.to_string().to_lowercase()),
+                    MusicError::new(
+                        Some(id.clone()),
+                        music_file.name,
+                        err.to_string().to_lowercase(),
+                    ),
                 )
                 .unwrap();
                 -1
             });
             if code == 100 {
-                app.emit("finished", id).unwrap();
-                let next_id;
+                app.emit("finished", id.clone()).unwrap();
+                // reset time position
                 {
-                    let sequence_type_state = app.state::<Mutex<SequenceTypeState>>();
-                    let sequence_type_state = sequence_type_state.lock().unwrap();
-                    let sequence_type = sequence_type_state.get();
-                    let music_files_state = app.state::<Mutex<MusicFilesState>>();
-                    let music_files_state = music_files_state.lock().unwrap();
-                    let music_files = music_files_state.get();
-
-                    if sequence_type == 2 {
-                        next_id = id;
-                    } else if sequence_type == 3 {
-                        let id = rand::random::<i32>() % music_files.len() as i32;
-                        next_id = id;
-                    } else {
-                        next_id = if id + 1 < music_files.len() as i32 {
-                            id + 1
-                        } else {
-                            0
-                        };
-                    }
                     let time_position_state = app.state::<Mutex<TimePositionState>>();
                     let mut time_position_state = time_position_state.lock().unwrap();
                     time_position_state.set(None);
                 }
+                let next_id = {
+                    let sequence_type = app
+                        .state::<Mutex<SequenceTypeState>>()
+                        .lock()
+                        .unwrap()
+                        .get();
+                    let music_files = app.state::<Mutex<MusicFilesState>>().lock().unwrap().get();
+
+                    // repeat one
+                    if sequence_type == 2 {
+                        id
+                    // random
+                    } else if sequence_type == 3 {
+                        let index = rand::thread_rng().gen_range(0..music_files.len());
+                        music_files.get(index).unwrap().id.clone()
+                    // repeat playlist
+                    } else {
+                        // get current id index
+                        let index = music_files
+                            .iter()
+                            .position(|music_file| music_file.id == id)
+                            .unwrap_or(0);
+                        let next_index = (index + 1) % music_files.len();
+                        music_files.get(next_index).unwrap().id.clone()
+                    }
+                };
                 play_music(next_id, None, app);
             } else if code == 0 {
                 println!("pause success:{}", code);
@@ -134,6 +150,46 @@ fn play_music(id: i32, position: Option<Time>, app: AppHandle) {
             }
         });
     }
+}
+
+fn init_cache_dir(app: AppHandle) -> Result<PathBuf, ()> {
+    let cache_dir = app.path().app_cache_dir();
+    match cache_dir {
+        Ok(cache_dir) => Ok(cache_dir),
+        Err(err) => {
+            app.emit(
+                "error",
+                MusicError::new(
+                    None,
+                    "cache dir".to_string(),
+                    err.to_string().to_lowercase(),
+                ),
+            )
+            .unwrap();
+            Err(())
+        }
+    }
+}
+
+#[tauri::command]
+fn clear_cache(app: AppHandle) {
+    let cloned_app = app.clone();
+    let result = init_cache_dir(cloned_app);
+    if let Ok(cache_dir) = result {
+        let result = cache::clear_cache(cache_dir);
+        if let Err(err) = result {
+            app.emit("error", err).unwrap();
+        }
+    }
+}
+
+fn get_image_path(name: String, app: AppHandle) -> Option<String> {
+    let cache_dir = app.path().app_cache_dir().unwrap();
+    let path = cache::load_cache(cache_dir, name);
+    if path.exists() {
+        return Some(path.to_str().unwrap().to_string());
+    }
+    None
 }
 
 #[tauri::command]
@@ -168,75 +224,89 @@ fn pause_action(pause_state: PauseState, app: AppHandle) {
 }
 
 #[tauri::command]
-fn play(
-    id: i32,
-    time: Option<f64>,
-    app: AppHandle,
+fn seek(
+    time: f64,
     id_state: State<'_, Mutex<IdState>>,
     pause_state: State<'_, Mutex<PauseState>>,
     music_files_state: State<'_, Mutex<MusicFilesState>>,
-    time_position_state: State<'_, Mutex<TimePositionState>>,
-) {
-    if id != -1 {
-        play_music(id, None, app);
-        return;
+    app: AppHandle,
+) -> Result<(), String> {
+    // Get current track ID or first track if none selected
+    let id = get_current_or_first_track_id(&id_state, &music_files_state)
+        .ok_or_else(|| "No track available to seek".to_string())?;
+
+    // Get current pause state
+    let is_paused = pause_state
+        .lock()
+        .map_err(|e| format!("Failed to access pause state: {}", e))?
+        .pause;
+
+    if is_paused {
+        // If paused, start playing from new position
+        let time = convert_to_time(time);
+        play_music(id.clone(), Some(time), app);
+    } else {
+        // If playing, update pause state with new position
+        pause_state
+            .lock()
+            .map_err(|e| format!("Failed to update pause state: {}", e))?
+            .set(
+                true,
+                Some(EventSource::Play("PLAY".to_string())),
+                Some(Payload::new(id, Some(time))),
+            );
     }
-    let mut current_id;
-    let position;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn switch(id: String, pause_state: State<'_, Mutex<PauseState>>, app: AppHandle) {
+    // reset time position
     {
-        let id_state = id_state.lock().unwrap();
-        if id_state.get() == -1 {
-            current_id = 0;
-        } else {
-            current_id = id_state.get();
-        }
-        let music_files_state = music_files_state.lock().unwrap();
-        let music_files_state = music_files_state.get();
-        let music_file = music_files_state
-            .iter()
-            .find(|&music_file| music_file.id == current_id);
-        if music_file.is_none() {
-            current_id = 0;
-        }
-        let time_position_state = time_position_state.lock().unwrap();
-        position = time_position_state.get();
+        let time_position_state = app.state::<Mutex<TimePositionState>>();
+        let mut time_position_state = time_position_state.lock().unwrap();
+        time_position_state.set(None);
     }
     let pause = {
         let pause_state = pause_state.lock().unwrap();
         pause_state.pause
     };
     if pause {
-        if let Some(time) = time {
-            let time = convert_to_time(time);
-            play_music(current_id, Some(time), app);
-            return;
-        }
-        if let Some(position) = position {
-            play_music(current_id, Some(position), app);
-            return;
-        }
-        play_music(current_id, None, app);
-        return;
+        play_music(id, None, app);
+    } else {
+        pause_state.lock().unwrap().set(
+            true,
+            Some(EventSource::Play("PLAY".to_string())),
+            Some(Payload::new(id, None)),
+        );
     }
+}
 
-    if let Some(time) = time {
-        let mut pause_state = pause_state.lock().unwrap();
-        pause_state.set(
-            true,
-            Some(EventSource::Play("PLAY".to_string())),
-            Some(Payload::new(current_id, Some(time))),
-        );
-        return;
+#[tauri::command]
+fn play(
+    app: AppHandle,
+    id_state: State<'_, Mutex<IdState>>,
+    pause_state: State<'_, Mutex<PauseState>>,
+    music_files_state: State<'_, Mutex<MusicFilesState>>,
+    time_position_state: State<'_, Mutex<TimePositionState>>,
+) -> Result<(), String> {
+    let id = get_current_or_first_track_id(&id_state, &music_files_state)
+        .ok_or_else(|| "No track available to play".to_string())?;
+
+    println!("current_id>>:{}", id);
+    let pause = {
+        let pause_state = pause_state.lock().unwrap();
+        pause_state.pause
+    };
+    println!("pause:{}", pause);
+    if pause {
+        let time = { time_position_state.lock().unwrap().get() };
+        println!("time:{:#?}", time);
+        play_music(id, time, app);
+        return Ok(());
     }
-    if let Some(position) = position {
-        let mut pause_state = pause_state.lock().unwrap();
-        pause_state.set(
-            true,
-            Some(EventSource::Play("PLAY".to_string())),
-            Some(Payload::new(current_id, Some(convert_to_fload(position)))),
-        );
-    }
-    // play_music(current_id, position, app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -246,46 +316,54 @@ fn play_next(
     music_files_state: State<'_, Mutex<MusicFilesState>>,
     time_position_state: State<'_, Mutex<TimePositionState>>,
     app: AppHandle,
-) {
-    let next_id;
-    {
-        let id_state = id_state.lock().unwrap();
-        let id = id_state.get();
-        let music_files_state = music_files_state.lock().unwrap();
-        let music_files_state = music_files_state.get();
-        let index = match music_files_state
-            .iter()
-            .position(|music_file| music_file.id == id)
-        {
-            Some(index) => index as i32,
-            None => -1,
-        };
-        let next_index = index + 1;
-        next_id = if next_index < music_files_state.len() as i32 {
-            match music_files_state.get(next_index as usize) {
-                Some(music_file) => music_file.id,
-                None => 0,
-            }
+) -> Result<(), String> {
+    let current_id = { id_state.lock().unwrap().get() };
+    let music_files = { music_files_state.lock().unwrap().get() };
+    if music_files.is_empty() {
+        return Err("Music files list is empty".to_string());
+    }
+    // Get next track ID
+    let next_id = {
+        // Find current track index and calculate next
+        if let Some(current_id) = current_id {
+            let current_index = music_files
+                .iter()
+                .position(|music_file| music_file.id == current_id)
+                .unwrap_or(0);
+
+            // Handle wrapping around to the beginning of the playlist
+            let next_index = (current_index + 1) % music_files.len();
+
+            music_files
+                .get(next_index)
+                .map(|music_file| music_file.id.clone())
+                .ok_or("Failed to get next track ID".to_string())?
         } else {
-            0
-        };
-    }
-    {
-        let mut time_position_state = time_position_state.lock().unwrap();
-        time_position_state.set(None);
-    }
-    {
-        let mut pause_state = pause_state.lock().unwrap();
-        if pause_state.pause {
-            play_music(next_id, None, app);
-            return;
+            music_files
+                .first()
+                .map(|music_file| music_file.id.clone())
+                .ok_or("Failed to get next track ID".to_string())?
         }
-        pause_state.set(
+    };
+
+    // reset time position
+    {
+        time_position_state.lock().unwrap().set(None);
+    }
+
+    // Handle playback state
+    let pause = { pause_state.lock().unwrap().pause };
+    if pause {
+        play_music(next_id, None, app);
+    } else {
+        pause_state.lock().unwrap().set(
             true,
             Some(EventSource::PlayNext("PLAY_NEXT".to_string())),
             Some(Payload::new(next_id, None)),
         );
     }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -295,46 +373,58 @@ fn play_previous(
     music_files_state: State<'_, Mutex<MusicFilesState>>,
     time_position_state: State<'_, Mutex<TimePositionState>>,
     app: AppHandle,
-) {
-    let prevois_id;
-    {
-        let id_state = id_state.lock().unwrap();
-        let id = id_state.get();
-        let music_files_state = music_files_state.lock().unwrap();
-        let music_files_state = music_files_state.get();
-        let index = match music_files_state
-            .iter()
-            .position(|music_file| music_file.id == id)
-        {
-            Some(index) => index as i32,
-            None => 0,
-        };
-        let prevois_index = index - 1;
-        prevois_id = if prevois_index >= 0 {
-            match music_files_state.get(prevois_index as usize) {
-                Some(music_file) => music_file.id,
-                None => 0,
-            }
+) -> Result<(), String> {
+    // Get previous track ID
+    let current_id = { id_state.lock().unwrap().get() };
+    let music_files = { music_files_state.lock().unwrap().get() };
+    if music_files.is_empty() {
+        return Err("Music files list is empty".to_string());
+    }
+    let previous_id = {
+        // Find current track index and calculate previous
+        if let Some(current_id) = current_id {
+            let current_index = music_files
+                .iter()
+                .position(|music_file| music_file.id == current_id)
+                .unwrap_or(0);
+
+            // Handle wrapping around to the end of the playlist
+            let previous_index = if current_index == 0 {
+                music_files.len() - 1
+            } else {
+                current_index - 1
+            };
+
+            music_files
+                .get(previous_index)
+                .map(|music_file| music_file.id.clone())
+                .ok_or("Failed to get previous track ID".to_string())?
         } else {
-            music_files_state.len() as i32 - 1
-        };
-    }
-    {
-        let mut time_position_state = time_position_state.lock().unwrap();
-        time_position_state.set(None);
-    }
-    {
-        let mut pause_state = pause_state.lock().unwrap();
-        if pause_state.pause {
-            play_music(prevois_id, None, app);
-            return;
+            music_files
+                .first()
+                .map(|music_file| music_file.id.clone())
+                .ok_or("Failed to get previous track ID".to_string())?
         }
-        pause_state.set(
+    };
+
+    // reset time position
+    {
+        time_position_state.lock().unwrap().set(None);
+    }
+
+    let pause = { pause_state.lock().unwrap().pause };
+    // Handle playback state
+    if pause {
+        play_music(previous_id.clone(), None, app);
+    } else {
+        pause_state.lock().unwrap().set(
             true,
             Some(EventSource::PlayPrev("PLAY_PREV".to_string())),
-            Some(Payload::new(prevois_id, None)),
+            Some(Payload::new(previous_id, None)),
         );
     }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -360,21 +450,6 @@ fn set_volume(volume: f32, app: AppHandle, volume_state: State<'_, Mutex<VolumeS
 }
 
 #[tauri::command]
-fn get_current_music(
-    id_state: State<'_, Mutex<IdState>>,
-    music_files_state: State<'_, Mutex<MusicFilesState>>,
-) -> Option<MusicFile> {
-    let music_files_state = music_files_state.lock().unwrap();
-    let music_files_state = music_files_state.get();
-    let id_state = id_state.lock().unwrap();
-    let id = id_state.get();
-    music_files_state
-        .iter()
-        .find(|&music_file| music_file.id == id)
-        .cloned()
-}
-
-#[tauri::command]
 fn change_sequence_type(
     sequence_type: u32,
     app: AppHandle,
@@ -389,19 +464,55 @@ fn change_sequence_type(
 }
 
 #[tauri::command]
-fn playlist_add(
-    music_files: Vec<MusicFile>,
+async fn playlist_add(
+    files: Vec<String>,
     app: AppHandle,
     music_files_state: State<'_, Mutex<MusicFilesState>>,
-) {
-    let mut music_files_state = music_files_state.lock().unwrap();
-    music_files_state.set(music_files.clone());
-    store::store_playlist(&app, &music_files);
+) -> Result<Vec<MusicFile>, ()> {
+    // Create music files from input files
+    let mut music_files: Vec<MusicFile> = files
+        .into_iter()
+        .map(|file| {
+            MusicFile::new(
+                Uuid::new_v4().to_string(),
+                extract_name_with_path(file.clone()),
+                file,
+                None,
+            )
+        })
+        .collect();
+
+    // Initialize cache
+    if let Ok(cache_dir) = init_cache_dir(app.clone()) {
+        if let Err(err) = cache::init_cache(cache_dir, music_files.clone()).await {
+            println!("err:{:#?}", err);
+            app.emit("error", err).unwrap();
+        }
+    }
+
+    // Add image paths to music files
+    for music_file in &mut music_files {
+        music_file.image_path = get_image_path(music_file.name.clone(), app.clone());
+    }
+
+    // Update state and store playlist
+    let playlist = store::load_playlist(&app);
+    let mut playlist = playlist.clone();
+    // merge playlist
+    playlist.extend(music_files);
+    let playlist_store = playlist.clone();
+    let playlist_state = playlist.clone();
+
+    let mut state = music_files_state.lock().unwrap();
+    state.set(playlist_state);
+    store::store_playlist(&app, &playlist_store);
+
+    Ok(playlist)
 }
 
 #[tauri::command]
 fn delete_from_playlist(
-    id: i32,
+    id: String,
     app: AppHandle,
     music_files_state: State<'_, Mutex<MusicFilesState>>,
 ) {
@@ -413,7 +524,18 @@ fn delete_from_playlist(
 }
 
 #[tauri::command]
-fn clear_playlist(app: AppHandle, music_files_state: State<'_, Mutex<MusicFilesState>>) {
+fn clear_playlist(
+    app: AppHandle,
+    id_state: State<'_, Mutex<IdState>>,
+    pause_state: State<'_, Mutex<PauseState>>,
+    time_position_state: State<'_, Mutex<TimePositionState>>,
+    music_files_state: State<'_, Mutex<MusicFilesState>>,
+) {
+    {
+        pause_state.lock().unwrap().set(true, None, None);
+        time_position_state.lock().unwrap().set(None);
+        id_state.lock().unwrap().set(None);
+    }
     let mut music_files_state = music_files_state.lock().unwrap();
     music_files_state.set(vec![]);
     let music_files_state = music_files_state.get();
@@ -430,6 +552,7 @@ fn load_playlist(
     let cloned_playlist = playlist.clone();
     let mut music_files_state = music_files_state.lock().unwrap();
     music_files_state.set(cloned_playlist);
+    println!("playlist>>>>{:#?}", playlist);
     playlist
 }
 
@@ -457,11 +580,14 @@ fn load_play_state(
     println!("play_state:{:#?}", play_state);
     match play_state {
         Some(play_state) => {
+            let cloned_play_state = play_state.clone();
             let mut id_state = id_state.lock().unwrap();
-            id_state.set(play_state.id);
+            id_state.set(play_state.id.clone());
             let mut time_position_state = time_position_state.lock().unwrap();
-            time_position_state.set(Some(parse_str_time(play_state.progress.clone())));
-            Some(play_state)
+            if let Some(time_position) = play_state.progress {
+                time_position_state.set(Some(parse_str_time(time_position)));
+            }
+            Some(cloned_play_state)
         }
         None => None,
     }
@@ -487,15 +613,17 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            clear_cache,
             pause_action,
             playlist_add,
             play,
+            seek,
             pause,
             play_next,
             play_previous,
+            switch,
             list_files,
             set_volume,
-            get_current_music,
             change_sequence_type,
             delete_from_playlist,
             clear_playlist,
@@ -544,4 +672,27 @@ fn convert_to_fload(time: Time) -> f64 {
     let seconds = time.seconds;
     let fractional = time.frac;
     seconds as f64 + fractional
+}
+
+// Helper function to get current track ID or first available track
+fn get_current_or_first_track_id(
+    id_state: &State<Mutex<IdState>>,
+    music_files_state: &State<Mutex<MusicFilesState>>,
+) -> Option<String> {
+    let id_state = id_state.lock().ok()?;
+
+    match id_state.get() {
+        Some(id) => Some(id),
+        None => {
+            let music_files = music_files_state.lock().ok()?.get();
+            music_files.first().map(|file| file.id.clone())
+        }
+    }
+}
+
+fn extract_name_with_path(path: String) -> String {
+    // extract name from path
+    let path = PathBuf::from(path);
+    let name = path.file_stem().unwrap().to_str().unwrap();
+    name.to_string()
 }

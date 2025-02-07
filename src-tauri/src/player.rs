@@ -464,16 +464,15 @@ fn play_track(
                             let id_state = app.state::<Mutex<IdState>>();
                             let id_state = id_state.lock().unwrap();
                             music_id = id_state.get();
-                            if music_id == -1 {
-                                music_name = "".to_string();
-                                music_path = "".to_string();
+                            if music_id.is_none() {
+                                return Ok(-1);
                             } else {
                                 let music_files_state = app.state::<Mutex<MusicFilesState>>();
                                 let music_files_state = music_files_state.lock().unwrap();
                                 let music_files = music_files_state.get();
                                 let music_file = music_files
                                     .iter()
-                                    .find(|&music_file| music_file.id == music_id)
+                                    .find(|&music_file| music_file.id == music_id.clone().unwrap())
                                     .cloned();
                                 if let Some(music_file) = music_file {
                                     music_name = music_file.name.clone();
@@ -514,7 +513,7 @@ fn play_track(
                         }
                         play_state_tx
                             .send(PlayState::new(
-                                music_id,
+                                music_id.unwrap(),
                                 music_name,
                                 music_path,
                                 progress,
@@ -630,9 +629,12 @@ fn print_format(probed: &mut ProbeResult, music_meta_tx: &Sender<MusicMeta>, app
             let id_state = app.state::<Mutex<IdState>>();
             let id_state = id_state.lock().unwrap();
             let id = id_state.get();
+            if id.is_none() {
+                return;
+            }
             let index = music_files
                 .iter()
-                .position(|music_file| music_file.id == id)
+                .position(|music_file| music_file.id == id.clone().unwrap())
                 .unwrap_or(0);
             title = music_files[index].name.clone();
         }

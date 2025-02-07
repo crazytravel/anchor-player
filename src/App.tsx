@@ -1,13 +1,12 @@
 import { useEffect, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { fetch } from '@tauri-apps/plugin-http';
 
 import './App.css';
 import bg from './assets/bg.png';
 
 import { listen } from '@tauri-apps/api/event';
-import { PlayState, MusicFile, MusicInfo, MusicInfoRes, MusicMeta, MusicSetting, MusicError } from './declare.ts';
+import { PlayState, MusicFile, MusicInfo, MusicMeta, MusicSetting, MusicError } from './declare.ts';
 import Info from './info';
 import {
   AlbumIcon,
@@ -36,24 +35,21 @@ import { Message } from './components.tsx';
 function App() {
   const itemRefs = useRef<(HTMLLIElement | null)[]>([]);
   const {
-    id,
+    activeId,
     playState: music,
     musicInfo,
-    musicMeta,
     musicTitle,
     musicArtist,
     musicAlbum,
-    musicImage,
     play,
     infoDisplay,
-    openedFiles,
     musicList,
     volume,
     previousVolume,
     isMuted,
     sequenceType,
     errors,
-    setId,
+    setActiveId,
     setPlayState,
     setMusicInfo,
     setMusicMeta,
@@ -63,7 +59,6 @@ function App() {
     setMusicImage,
     setPlay,
     setInfoDisplay,
-    setOpenedFiles,
     setMusicList,
     setVolume,
     setPreviousVolume,
@@ -71,58 +66,6 @@ function App() {
     setSequencType,
     setErrors
   } = useMusicStore();
-
-  function debounce<T extends (...args: any[]) => Promise<any>>(func: T, wait: number): (...args: Parameters<T>) => void {
-    let timeout: ReturnType<typeof setTimeout>;
-    return function (this: ThisParameterType<T>, ...args: Parameters<T>) {
-      clearTimeout(timeout);
-      timeout = setTimeout(async () => {
-        await func.apply(this, args);
-      }, wait);
-    };
-  }
-
-  const fetchMusicInfo = async (keyword: string) => {
-    // Send a GET request
-    const response = await fetch(`https://itunes.apple.com/cn/search?term=${keyword}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
-    if (response.status !== 200) {
-      return;
-    }
-    const resBody: MusicInfoRes = await response.json();
-    console.log(resBody);
-    if (resBody.resultCount !== 0) {
-      // filter kind: song, wrapperType: track, sort releaseDate with desc and trackNumber with asc and get the first one
-      const results = resBody.results
-        .filter((body) => body.kind.toLowerCase() === 'song' && body.wrapperType.toLowerCase() === 'track')
-        .sort((a, b) => {
-          return new Date(a.releaseDate).getTime() - new Date(b.releaseDate).getTime();
-        });
-      if (results.length === 0) {
-        return;
-      }
-      const result = results[0];
-      if (result.artworkUrl100) {
-        const url = result.artworkUrl100.replace('100x100', '600x600');
-        console.log('url:', url)
-        console.log('musicImage:', musicImage)
-        if (url !== musicImage) {
-          setMusicImage(url);
-        }
-      }
-      setMusicArtist(result.artistName);
-      setMusicAlbum(result.collectionName);
-      console.log('musicMeta:', musicMeta)
-    } else {
-      setMusicImage(bg);
-      setMusicArtist(undefined);
-      setMusicAlbum(undefined);
-    }
-  }
 
   // Add volume control functions
   const handleVolumeChange = async (newVolume: number) => {
@@ -144,93 +87,105 @@ function App() {
     }
   };
 
-  const extractMusicName = (path: string): string => {
-    const parts = path.split('/');
-    // split with last '.' and get the first part
-    const fullFilename = parts[parts.length - 1];
-    const index = fullFilename.lastIndexOf('.');
-    const filename = fullFilename.substring(0, index);
-    return filename;
-  };
-
-  const start = async (id: number) => {
-    console.log('start:', id)
-    try {
-      // setMusicArtist(undefined);
-      // setMusicAlbum(undefined);
-      // setMusicImage(bg);
-      setMusicInfo(undefined);
-      // setId(id);
-      await invoke('play', { id });
-      // setPlay(true);
-    } catch (error) {
-      console.error('Failed to start playback:', error);
-      // setPlay(false);
-    }
-  };
-
   async function pause() {
     setPlay(false);
     calculateProgress('0:00:00.0', '0:00:00.0');
     await invoke('pause');
   }
 
-  async function stop() {
-    setPlay(false);
-    setId(-1);
-    setMusicInfo(undefined);
-    setMusicMeta(undefined);
-    setMusicTitle(undefined);
-    setMusicArtist(undefined);
-    setMusicAlbum(undefined);
-    setPlayState(undefined);
-    setMusicImage(bg);
-    calculateProgress('0:00:00.0', '0:00:00.0');
-    await invoke('pause');
-  }
 
   const finishPlay = async () => {
   };
 
   async function playControl() {
-    console.log('playControl:', play)
     if (play) {
       await pause();
       return;
     }
-    if (openedFiles && openedFiles.length > 0) {
-      await start(-1);
+    if (musicList && musicList.length > 0) {
+      console.log('hello:', musicList)
+      try {
+        setMusicInfo(undefined);
+        await invoke('play', {});
+      } catch (e) {
+        console.error('Failed to play:', e)
+        const error = e as MusicError;
+        setErrors([...errors, error])
+      }
     }
   }
 
-  const playPrevious = async () => {
-    setMusicArtist(undefined);
-    setMusicAlbum(undefined);
-    await invoke('play_previous', {});
-  };
-
-  const playNext = async () => {
-    setMusicArtist(undefined);
-    setMusicAlbum(undefined);
-    await invoke('play_next', {});
-  };
-
   const startPlayPrevious = async () => {
-    if (!openedFiles || openedFiles.length <= 0) {
+    if (!musicList || musicList.length <= 0) {
       return;
     }
     setPlay(true);
-    setMusicImage(bg);
-    await playPrevious();
+    setMusicArtist(undefined);
+    setMusicAlbum(undefined);
+    try {
+      await invoke('play_previous', {});
+    } catch (e) {
+      console.error('Failed to play previous one:', e)
+      const error = e as MusicError;
+      setErrors([...errors, error])
+    }
   }
 
   const startPlayNext = async () => {
-    if (!openedFiles || openedFiles.length <= 0) {
+    if (!musicList || musicList.length <= 0) {
       return;
     }
     setPlay(true);
-    setMusicImage(bg);
-    await playNext();
+    setMusicArtist(undefined);
+    setMusicAlbum(undefined);
+    try {
+      await invoke('play_next', {});
+    } catch (e) {
+      console.error('Failed to play next one:', e)
+      const error = e as MusicError;
+      setErrors([...errors, error])
+    }
+  }
+
+
+  const switchMusic = async (index: number) => {
+    if (!musicList || musicList.length === 0) {
+      return;
+    }
+    console.log('index:', index)
+    const id = musicList[index].id;
+    console.log('id:', id)
+    try {
+      await invoke('switch', { id });
+    } catch (e) {
+      console.error('Failed to switch:', e)
+      const error = e as MusicError;
+      setErrors([...errors, error])
+    }
+  };
+
+  const seek = async (rect: DOMRect, clientX: number) => {
+    if (!music || !music?.left_duration) {
+      return;
+    }
+
+    const x = clientX - rect.left;
+    const percentage = (x / rect.width) * 100;
+    const progressSeconds = timeToSeconds(
+      music?.progress || '0:00:00.0',
+    );
+    const leftDurationSeconds = timeToSeconds(
+      music?.left_duration || '0:00:00.0',
+    );
+    setPlay(true);
+    const newTime = (percentage / 100) * (progressSeconds + leftDurationSeconds);
+    try {
+      await invoke('seek', { time: newTime })
+    } catch (e) {
+      console.error('Failed to seek:', e)
+      const error = e as MusicError;
+      setErrors([...errors, error])
+    }
   }
 
   const timeToSeconds = (timeStr: string): number => {
@@ -277,10 +232,23 @@ function App() {
     return `${hours}:${formattedMinutes}:${formattedSeconds}`;
   }
 
-  const initFiles = (files: string[], initialNo: number): MusicFile[] => {
-    return files.map((file, index) => {
-      return { id: index + initialNo, name: extractMusicName(file), path: file }
-    })
+  // const initFiles = async (mFiles: MusicFile[]) => {
+  //   const musicFiles: MusicFile[] = [];
+  //   for (const file of mFiles) {
+  //     const name = file.name;
+  //     const path = await invoke<string>('get_image_path', { name });
+  //     // Convert to URL that can be used in frontend
+  //     const imagePath = convertFileSrc(path);
+  //     file.imagePath = imagePath
+  //     musicFiles.push(file);
+  //   }
+  //   return musicFiles;
+  // }
+
+  const addPlaylist = async (files: string[]) => {
+    const musics = await invoke<MusicFile[]>('playlist_add', { files })
+    console.log('musics:', musics)
+    setMusicList(musics);
   }
 
   const openFile = async () => {
@@ -296,13 +264,7 @@ function App() {
       ],
     });
     if (files) {
-      console.log('musicList:', musicList)
-      const maxId = musicList.length > 0 ? musicList[musicList.length - 1].id + 1 : 0;
-      setOpenedFiles([...openedFiles, ...files]);
-      const musicFiles = initFiles(files, maxId);
-      console.log('musicFiles:', musicFiles)
-      setMusicList([...musicList, ...musicFiles]);
-      await invoke('playlist_add', { musicFiles: [...musicList, ...musicFiles] })
+      await addPlaylist(files)
     }
   };
 
@@ -314,11 +276,7 @@ function App() {
     if (paths) {
       const files = await invoke<string[]>('list_files', { dirs: paths });
       if (files.length > 0) {
-        const maxId = musicList.length > 0 ? musicList[musicList.length - 1].id + 1 : 0;
-        setOpenedFiles([...openedFiles, ...files]);
-        const musicFiles = initFiles(files, maxId);
-        setMusicList([...musicList, ...musicFiles]);
-        await invoke('playlist_add', { musicFiles: [...musicList, ...musicFiles] })
+        await addPlaylist(files)
       }
     }
   };
@@ -341,20 +299,7 @@ function App() {
     }
   }
 
-  const changeMusic = async (index: number) => {
-    if (!openedFiles || openedFiles.length === 0) {
-      return;
-    }
-    console.log('index:', index)
-    const id = musicList[index].id;
-    console.log('id:', id)
-    await start(id);
-  };
-
   const deleteFromPlayList = async (index: number) => {
-    const newFiles = [...openedFiles];
-    newFiles.splice(index, 1);
-    setOpenedFiles(newFiles);
     const newList = [...musicList];
     const theId = newList[index].id;
     newList.splice(index, 1);
@@ -362,23 +307,6 @@ function App() {
     await invoke('delete_from_playlist', { id: theId });
   };
 
-  const seek = async (rect: DOMRect, clientX: number) => {
-    if (!music || !music?.left_duration) {
-      return;
-    }
-
-    const x = clientX - rect.left;
-    const percentage = (x / rect.width) * 100;
-    const progressSeconds = timeToSeconds(
-      music?.progress || '0:00:00.0',
-    );
-    const leftDurationSeconds = timeToSeconds(
-      music?.left_duration || '0:00:00.0',
-    );
-    setPlay(true);
-    const newTime = (percentage / 100) * (progressSeconds + leftDurationSeconds);
-    await invoke('play', { id: -1, time: newTime }).catch(console.error);
-  }
 
   const formatTime = (time: string): string => {
     return time.split('.')[0];
@@ -399,11 +327,19 @@ function App() {
   }
 
   const clearList = async () => {
-    if (!openedFiles || openedFiles.length === 0) {
+    if (!musicList || musicList.length === 0) {
       return;
     }
-    await stop();
-    setOpenedFiles([]);
+    setPlay(false);
+    setActiveId(undefined);
+    setMusicInfo(undefined);
+    setMusicMeta(undefined);
+    setMusicTitle(undefined);
+    setMusicArtist(undefined);
+    setMusicAlbum(undefined);
+    setPlayState(undefined);
+    setMusicImage(bg);
+    calculateProgress('0:00:00.0', '0:00:00.0');
     setMusicList([]);
     await invoke('clear_playlist', {});
   }
@@ -417,7 +353,7 @@ function App() {
 
     const unErrorListen = listen<MusicError>('error', (event) => {
       const error = event.payload;
-      setId(error.id);
+      setActiveId(error.id);
       setMusicTitle(error.name);
       setPlay(false);
       setMusicInfo(undefined);
@@ -434,7 +370,7 @@ function App() {
     });
 
     const unMusicListen = listen<PlayState>('play-state', (event) => {
-      setId(event.payload.id);
+      setActiveId(event.payload.id);
       setPlayState(event.payload);
       calculateProgress(event.payload.progress, event.payload.left_duration);
     });
@@ -463,7 +399,7 @@ function App() {
       if (event.payload.artist) {
         keyword = event.payload.artist + '+' + keyword;
       }
-      await fetchMusicInfo(keyword);
+      // await fetchMusicInfo(keyword);
     });
 
     // const unListenedImage = listen<string>('music-image', (event) => {
@@ -485,14 +421,13 @@ function App() {
     const loadPlaylist = async () => {
       const playlist = await invoke<MusicFile[]>('load_playlist', {});
       console.log('playlist:', playlist)
-      setOpenedFiles(playlist.map((file) => file.path));
       setMusicList(playlist);
     }
     const loadPlayState = async () => {
       const playState = await invoke<PlayState>('load_play_state', {});
       console.log("playState:", playState);
       if (!playState) return;
-      setId(playState.id);
+      setActiveId(playState.id);
       setPlayState(playState);
       let musicInfo: MusicInfo = {
         duration: calDuration(playState.progress, playState.left_duration)
@@ -535,30 +470,27 @@ function App() {
   }, [errors]);
 
   useEffect(() => {
-    if (id === -1) {
+    if (!activeId) {
       return;
     }
-    let index = musicList.findIndex((music) => music.id === id);
+    let index = musicList.findIndex((music) => music.id === activeId);
     if (itemRefs.current[index]) {
       itemRefs.current[index].scrollIntoView({
         behavior: 'smooth',
         block: 'center',
       });
     }
-  }, [id]);
+  }, [activeId]);
 
-  // const debouncedChangeMusic = debounce(changeMusic, 300);
-  // const debouncedSeek = debounce(seek, 300);
-  // const debouncedStartPlayPrevious = debounce(startPlayPrevious, 300);
-  // const debouncedStartPlayNext = debounce(startPlayNext, 300);
-  // const debouncedPlayControl = debounce(playControl, 300);
 
   return (
     <div className="flex flex-col w-full h-full m-0 p-0 relative">
       <div
         className="absolute inset-0 bg-cover bg-center blur-3xl"
         style={{
-          backgroundImage: `url(${musicImage})`,
+          backgroundImage: `url(${musicList.find(music => music.id == activeId)?.imagePath
+            ? convertFileSrc(musicList.find(music => music.id == activeId)?.imagePath!)
+            : bg})`,
         }}
       ></div>
       <header
@@ -581,21 +513,21 @@ function App() {
               </div>
             </div>
             <ul className="list">
-              {openedFiles?.map((file, index) => (
+              {musicList?.map((music, index) => (
                 <li
                   key={index}
                   ref={(el) => (itemRefs.current[index] = el)}
-                  className={(musicList[index].id === id && 'text-active') || ''}
+                  className={(music.id === activeId && 'text-active') || ''}
                 >
                   <div
-                    onDoubleClick={() => changeMusic(index)}
+                    onDoubleClick={() => switchMusic(index)}
                     className="file-name cursor-default"
                   >
-                    {file.split('/')[file.split('/').length - 1]}
+                    {music.name}
                   </div>
                   <div className="statusIcon">
-                    {(musicList[index].id !== id || !play) && <DeleteIcon onClick={async () => deleteFromPlayList(index)} />}
-                    {musicList[index].id === id && play && (
+                    {(music.id !== activeId || !play) && <DeleteIcon onClick={async () => deleteFromPlayList(index)} />}
+                    {music.id === activeId && play && (
                       <span className="rotate">
                         <AlbumIcon />
                       </span>
@@ -613,11 +545,9 @@ function App() {
             </div>
             <div className="img-container">
               <div className={play ? 'img-wrapper rotate' : 'img-wrapper'}>
-                {musicImage ? (
-                  <img src={musicImage} className="logo" alt="music" />
-                ) : (
-                  <img src={bg} className="logo" alt="music" />
-                )}
+                <img src={musicList.find(music => music.id == activeId)?.imagePath
+                  ? convertFileSrc(musicList.find(music => music.id == activeId)?.imagePath!)
+                  : bg} className="logo" alt="music" />
               </div>
             </div>
             <div className="short-info">

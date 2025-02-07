@@ -2,13 +2,13 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct MusicError {
-    pub id: i32,
+    pub id: Option<String>,
     pub name: String,
     pub message: String,
 }
 
 impl MusicError {
-    pub fn new(id: i32, name: String, message: String) -> Self {
+    pub fn new(id: Option<String>, name: String, message: String) -> Self {
         Self { id, name, message }
     }
 }
@@ -56,50 +56,39 @@ impl MusicInfo {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct PlayState {
-    pub id: i32,
-    pub name: String,
-    pub path: String,
-    pub progress: String,
-    pub left_duration: String,
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub path: Option<String>,
+    pub progress: Option<String>,
+    pub left_duration: Option<String>,
 }
 
 impl PlayState {
     pub fn new(
-        id: i32,
+        id: String,
         name: String,
         path: String,
         progress: String,
         left_duration: String,
     ) -> Self {
         Self {
-            id,
-            name,
-            path,
-            progress,
-            left_duration,
+            id: Some(id),
+            name: Some(name),
+            path: Some(path),
+            progress: Some(progress),
+            left_duration: Some(left_duration),
         }
     }
     pub fn from_json(json: &serde_json::Value) -> Self {
-        let id = match json["id"].as_i64() {
-            Some(id) => id as i32,
-            None => 0,
-        };
-        let name = match json["name"].as_str() {
-            Some(name) => name.to_string(),
-            None => "".to_string(),
-        };
-        let path = match json["path"].as_str() {
-            Some(path) => path.to_string(),
-            None => "".to_string(),
-        };
-        let progress = match json["progress"].as_str() {
-            Some(progress) => progress.to_string(),
-            None => "".to_string(),
-        };
-        let left_duration = match json["left_duration"].as_str() {
-            Some(duration) => duration.to_string(),
-            None => "".to_string(),
-        };
+        let id = json["id"].as_str().map(|id| id.to_string());
+        let name = json["name"].as_str().map(|name| name.to_string());
+        let path = json["path"].as_str().map(|path| path.to_string());
+        let progress = json["progress"]
+            .as_str()
+            .map(|progress| progress.to_string());
+        let left_duration = json["left_duration"]
+            .as_str()
+            .map(|duration| duration.to_string());
         Self {
             id,
             name,
@@ -139,21 +128,28 @@ impl MusicImage {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MusicFile {
-    pub id: i32,
+    pub id: String,
     pub name: String,
     pub path: String,
+    pub image_path: Option<String>,
 }
 
 impl MusicFile {
-    pub fn new(id: i32, name: String, path: String) -> Self {
-        Self { id, name, path }
+    pub fn new(id: String, name: String, path: String, image_path: Option<String>) -> Self {
+        Self {
+            id,
+            name,
+            path,
+            image_path,
+        }
     }
 
     pub fn from_json(json: &serde_json::Value) -> Self {
-        let id = match json["id"].as_i64() {
-            Some(id) => id as i32,
-            None => 0,
+        let id = match json["id"].as_str() {
+            Some(id) => id.to_string(),
+            None => "".to_string(),
         };
         let name = match json["name"].as_str() {
             Some(name) => name.to_string(),
@@ -163,7 +159,15 @@ impl MusicFile {
             Some(path) => path.to_string(),
             None => "".to_string(),
         };
-        Self { id, name, path }
+        let image_path = json["imagePath"]
+            .as_str()
+            .map(|image_path| image_path.to_string());
+        Self {
+            id,
+            name,
+            path,
+            image_path,
+        }
     }
 }
 

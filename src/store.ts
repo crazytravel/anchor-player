@@ -4,7 +4,7 @@ import { PlayState, MusicFile, MusicInfo, MusicMeta, MusicError } from './declar
 import bg from './assets/bg.png';
 
 type MusicStore = {
-  id: number
+  activeId?: string
   playState?: PlayState
   musicInfo?: MusicInfo
   musicMeta?: MusicMeta
@@ -22,7 +22,7 @@ type MusicStore = {
   sequenceType: number
   errors: MusicError[]
 
-  setId: (id: number) => void
+  setActiveId: (activeId?: string) => void
   setPlayState: (playState?: PlayState) => void
   setMusicInfo: (musicInfo?: MusicInfo) => void
   setMusicMeta: (musicMeta?: MusicMeta) => void
@@ -42,7 +42,7 @@ type MusicStore = {
 }
 
 export const useMusicStore = create<MusicStore>((set) => ({
-  id: 0,
+  activeId: undefined,
   playState: undefined,
   musicInfo: undefined,
   musicMeta: undefined,
@@ -60,9 +60,9 @@ export const useMusicStore = create<MusicStore>((set) => ({
   sequenceType: SEQUENCE_TYPES.REPEAT,
   errors: [],
 
-  setId: (id: number) => set(() => {
+  setActiveId: (activeId?: string) => set(() => {
     return {
-      id
+      activeId
     }
   }),
   setPlayState: (playState?: PlayState) => set({ playState: playState }),

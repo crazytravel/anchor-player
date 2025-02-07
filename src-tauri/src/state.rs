@@ -1,23 +1,23 @@
 use serde::{Deserialize, Serialize};
 use symphonia::core::units::Time;
 
-use crate::music::{MusicFile, PlayState};
+use crate::music::MusicFile;
 
 #[derive(Debug, Clone)]
-pub struct IdState(i32);
+pub struct IdState(Option<String>);
 
 impl IdState {
-    fn new(id: i32) -> Self {
+    fn new(id: Option<String>) -> Self {
         Self(id)
     }
     pub fn default() -> Self {
-        Self::new(-1)
+        Self::new(None)
     }
-    pub fn set(&mut self, id: i32) {
+    pub fn set(&mut self, id: Option<String>) {
         self.0 = id;
     }
-    pub fn get(&self) -> i32 {
-        self.0
+    pub fn get(&self) -> Option<String> {
+        self.0.clone()
     }
 }
 
@@ -31,12 +31,12 @@ pub enum EventSource {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Payload {
-    pub id: i32,
+    pub id: String,
     pub time_position: Option<f64>,
 }
 
 impl Payload {
-    pub fn new(id: i32, time_position: Option<f64>) -> Self {
+    pub fn new(id: String, time_position: Option<f64>) -> Self {
         Self { id, time_position }
     }
 }

@@ -17,7 +17,7 @@ export interface MusicInfo {
 }
 
 export interface PlayState {
-  id: number;
+  id: string;
   name: string;
   path: string;
   left_duration: string;
@@ -31,13 +31,14 @@ export interface MusicMeta {
 }
 
 export interface MusicFile {
-  id: number
+  id: string
   name: string
   path: string
+  imagePath?: string
 }
 
 export interface MusicState {
-  id: number
+  id: string
   state: 'FINISHED' | 'PLAYING' | 'PAUSED' | 'STOPPED'
 }
 
@@ -84,7 +85,7 @@ export interface MusicSetting {
 }
 
 export interface MusicError {
-  id: number,
+  id: string,
   name: string,
   message: string,
 }
