@@ -25,24 +25,25 @@ import {
   VolumeHighIcon,
   VolumeLowIcon,
   VolumeMuteIcon,
+  SettingIcon,
 } from './icon';
 
 import { SEQUENCE_TYPES, SUPPORTED_FORMATS } from './constants';
 import { useMusicStore } from './store';
 import { Message } from './components.tsx';
+import Setting from './setting.tsx';
 
 
 function App() {
   const itemRefs = useRef<(HTMLLIElement | null)[]>([]);
   const {
     activeId,
-    playState: music,
+    playState,
     musicInfo,
     musicTitle,
-    musicArtist,
-    musicAlbum,
     play,
     infoDisplay,
+    settingDisplay,
     musicList,
     volume,
     previousVolume,
@@ -59,6 +60,7 @@ function App() {
     setMusicImage,
     setPlay,
     setInfoDisplay,
+    setSettingDisplay,
     setMusicList,
     setVolume,
     setPreviousVolume,
@@ -89,7 +91,6 @@ function App() {
 
   async function pause() {
     setPlay(false);
-    calculateProgress('0:00:00.0', '0:00:00.0');
     await invoke('pause');
   }
 
@@ -165,17 +166,17 @@ function App() {
   };
 
   const seek = async (rect: DOMRect, clientX: number) => {
-    if (!music || !music?.left_duration) {
+    if (!playState || !playState?.left_duration) {
       return;
     }
 
     const x = clientX - rect.left;
     const percentage = (x / rect.width) * 100;
     const progressSeconds = timeToSeconds(
-      music?.progress || '0:00:00.0',
+      playState?.progress || '0:00:00.0',
     );
     const leftDurationSeconds = timeToSeconds(
-      music?.left_duration || '0:00:00.0',
+      playState?.left_duration || '0:00:00.0',
     );
     setPlay(true);
     const newTime = (percentage / 100) * (progressSeconds + leftDurationSeconds);
@@ -205,12 +206,9 @@ function App() {
 
   const calculateProgress = (progress?: string, left_duration?: string): number => {
     if (!progress || !left_duration) return 0;
-
     // Convert time string to seconds
     const progressSeconds = timeToSeconds(progress);
     const leftDurationSeconds = timeToSeconds(left_duration);
-
-    if (leftDurationSeconds === 0) return 0;
     return (progressSeconds / (progressSeconds + leftDurationSeconds)) * 100;
   };
 
@@ -248,7 +246,8 @@ function App() {
   const addPlaylist = async (files: string[]) => {
     const musics = await invoke<MusicFile[]>('playlist_add', { files })
     console.log('musics:', musics)
-    setMusicList(musics);
+    // setMusicList(musics);
+    await initPlaylist();
   }
 
   const openFile = async () => {
@@ -339,12 +338,30 @@ function App() {
     setMusicAlbum(undefined);
     setPlayState(undefined);
     setMusicImage(bg);
-    calculateProgress('0:00:00.0', '0:00:00.0');
     setMusicList([]);
     await invoke('clear_playlist', {});
   }
 
+
+  const initPlaylist = async () => {
+    const playlist = await invoke<MusicFile[]>('init_playlist', {});
+    console.log('playlist:', playlist)
+    setMusicList(playlist);
+  }
+
+  const loadPlaylist = async () => {
+    const playlist = await invoke<MusicFile[]>('load_playlist', {});
+    console.log('playlist:', playlist)
+    setMusicList(playlist);
+  }
+
   useEffect(() => {
+
+    const unMusicDataCompletionListen = listen<MusicFile>('music_data_completion', async (event) => {
+      console.log('event from music_data_completion: ', event)
+      // let music = event.payload;
+      await loadPlaylist();
+    });
 
     const unPauseActionListen = listen('paused-action', async (event) => {
       console.log('event from paused-action: ', event)
@@ -354,7 +371,6 @@ function App() {
     const unErrorListen = listen<MusicError>('error', (event) => {
       const error = event.payload;
       setActiveId(error.id);
-      setMusicTitle(error.name);
       setPlay(false);
       setMusicInfo(undefined);
       setMusicMeta(undefined);
@@ -372,7 +388,6 @@ function App() {
     const unMusicListen = listen<PlayState>('play-state', (event) => {
       setActiveId(event.payload.id);
       setPlayState(event.payload);
-      calculateProgress(event.payload.progress, event.payload.left_duration);
     });
 
     const unFinishedListen = listen<number>('finished', async (event) => {
@@ -411,6 +426,7 @@ function App() {
       await invoke('show_main_window', {});
     }
 
+
     const loadSettings = async () => {
       const settings = await invoke<MusicSetting>('load_settings', {});
       console.log('settings:', settings);
@@ -418,11 +434,7 @@ function App() {
       console.log('settings.sequenceType:', settings.sequence_type)
       setSequencType(settings.sequence_type)
     }
-    const loadPlaylist = async () => {
-      const playlist = await invoke<MusicFile[]>('load_playlist', {});
-      console.log('playlist:', playlist)
-      setMusicList(playlist);
-    }
+
     const loadPlayState = async () => {
       const playState = await invoke<PlayState>('load_play_state', {});
       console.log("playState:", playState);
@@ -445,10 +457,11 @@ function App() {
       }
     }
     loadSettings();
-    loadPlaylist();
+    initPlaylist();
     loadPlayState();
 
     return () => {
+      unMusicDataCompletionListen.then(f => f());
       unPauseActionListen.then(f => f());
       unMusicInfoListen.then(f => f());
       unMusicListen.then(f => f());
@@ -473,14 +486,18 @@ function App() {
     if (!activeId) {
       return;
     }
-    let index = musicList.findIndex((music) => music.id === activeId);
-    if (itemRefs.current[index]) {
-      itemRefs.current[index].scrollIntoView({
-        behavior: 'smooth',
-        block: 'center',
-      });
-    }
-  }, [activeId]);
+    console.log("activeId", activeId)
+    setTimeout(() => {
+      let index = musicList.findIndex((music) => music.id === activeId);
+      if (itemRefs.current[index]) {
+        console.log("scrollIntoView")
+        itemRefs.current[index].scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        });
+      }
+    }, 500)
+  }, [activeId, musicList]);
 
 
   return (
@@ -488,27 +505,38 @@ function App() {
       <div
         className="absolute inset-0 bg-cover bg-center blur-3xl"
         style={{
-          backgroundImage: `url(${musicList.find(music => music.id == activeId)?.imagePath
-            ? convertFileSrc(musicList.find(music => music.id == activeId)?.imagePath!)
+          backgroundImage: `url(${musicList.find(music => music.id === activeId)?.imagePath
+            ? convertFileSrc(musicList.find(music => music.id === activeId)?.imagePath!)
             : bg})`,
         }}
       ></div>
       <header
         className="relative z-10 h-8 w-full text-center p-2 cursor-default app-name"
         data-tauri-drag-region="true"
-      >
-        Anchor Player - Lossless Music Player
-      </header>
-      <main className="relative z-10 h-0 flex-1 flex flex-col p-4">
+      />
+      <main className="relative z-10 h-0 flex-1 flex flex-col px-4 pb-4">
+        <div className='absolute right-4 top-0 z-10'>
+          <SettingIcon onClick={() => setSettingDisplay(true)} />
+        </div>
         <div className="play-container">
           <div className="list-wrapper">
+            <div className='flex items-center pb-2'>
+              <img src={bg} className='w-10 h-10' />
+              <div className='mx-3'>
+                <div className='font-bold '>
+                  Anchor Player
+                </div>
+                <div className='text-xs'>Lossless Music Player</div>
+              </div>
+            </div>
             <div className="toolbar">
               <div className='flex'>
+
                 <OpenFolderIcon onClick={openFolder} />
                 <div className="w-3" />
                 <OpenFileIcon onClick={openFile} />
               </div>
-              <div>
+              <div className='flex'>
                 <ClearAllIcon onClick={clearList} />
               </div>
             </div>
@@ -521,16 +549,15 @@ function App() {
                 >
                   <div
                     onDoubleClick={() => switchMusic(index)}
-                    className="file-name cursor-default"
+                    className="cursor-default flex items-center w-full"
                   >
-                    {music.name}
+                    <div><img src={music.imagePath ? convertFileSrc(music.imagePath) : bg} className={`w-10 h-10 p-0.5 bg-panel rounded-full ${play && activeId === music.id && "rotate"}`} /></div>
+                    <div className='flex-1 ml-2 w-0 truncate'>{music.name}</div>
                   </div>
                   <div className="statusIcon">
                     {(music.id !== activeId || !play) && <DeleteIcon onClick={async () => deleteFromPlayList(index)} />}
                     {music.id === activeId && play && (
-                      <span className="rotate">
-                        <AlbumIcon />
-                      </span>
+                      <AlbumIcon onClick={() => setInfoDisplay(true)} />
                     )}
                   </div>
                 </li>
@@ -540,8 +567,8 @@ function App() {
           <div className="play-wrapper">
             <div className="title-wrapper">
               <div className="title">{musicTitle}</div>
-              <div className="p-2">{musicArtist}</div>
-              <div>{musicAlbum}</div>
+              <div className="p-2">{musicList.find(music => music.id == activeId)?.artist}</div>
+              <div>{musicList.find(music => music.id == activeId)?.album}</div>
             </div>
             <div className="img-container">
               <div className={play ? 'img-wrapper rotate' : 'img-wrapper'}>
@@ -574,7 +601,7 @@ function App() {
             <div
               className="progress-bar"
               style={{
-                width: `${calculateProgress(music?.progress, music?.left_duration)}% `,
+                width: `${calculateProgress(playState?.progress, playState?.left_duration)}% `,
               }}
             />
           </div>
@@ -582,7 +609,7 @@ function App() {
             <div className="time-container">
               <div className="time-wrapper">
                 <div className="progress">
-                  {music?.progress ? formatTime(music.progress) : '0:00:00'}
+                  {playState?.progress ? formatTime(playState.progress) : '0:00:00'}
                 </div>
                 &nbsp;/&nbsp;
                 <div className="duration">
@@ -643,10 +670,11 @@ function App() {
           infoDisplay && <Info
             onClick={() => setInfoDisplay(false)}
             musicInfo={musicInfo}
-            className="music-info bg-panel"
           />
         }
-
+        {
+          settingDisplay && <Setting onClose={() => setSettingDisplay(false)} onClearCache={initPlaylist} />
+        }
         <div className='absolute z-10 right-0 top-0'>
           {
             errors.map((error, index) => (

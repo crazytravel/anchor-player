@@ -35,6 +35,8 @@ export interface MusicFile {
   name: string
   path: string
   imagePath?: string
+  artist?: string;
+  album?: string;
 }
 
 export interface MusicState {

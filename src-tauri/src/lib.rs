@@ -14,7 +14,9 @@ use tauri_plugin_store::StoreExt;
 use uuid::Uuid;
 
 use log::error;
-use music::{MusicError, MusicFile, MusicImage, MusicInfo, MusicMeta, MusicSetting, PlayState};
+use music::{
+    MusicError, MusicFile, MusicImage, MusicInfo, MusicMap, MusicMeta, MusicSetting, PlayState,
+};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 mod cache;
@@ -41,9 +43,12 @@ fn play_music(id: String, position: Option<Time>, app: AppHandle) {
     }
     let app_info = app.clone();
     let app_play_state = app.clone();
+    let app_store = app.clone();
     let app_meta = app.clone();
     let app_image = app.clone();
+    let app_cache = app.clone();
     let (play_state_tx, play_state_rx) = channel::<PlayState>();
+    let (store_state_tx, store_state_rx) = channel::<PlayState>();
     let (music_info_tx, music_info_rx) = channel::<MusicInfo>();
     let (music_meta_tx, music_meta_rx) = channel::<MusicMeta>();
     let (music_image_tx, music_image_rx) = channel::<MusicImage>();
@@ -60,6 +65,7 @@ fn play_music(id: String, position: Option<Time>, app: AppHandle) {
     };
 
     if let Some(music_file) = music_file {
+        let cloned_music_file = music_file.clone();
         let path = music_file.path.clone();
         println!("the path: {:#?}", path);
         thread::spawn(move || {
@@ -68,6 +74,7 @@ fn play_music(id: String, position: Option<Time>, app: AppHandle) {
                 position,
                 path.as_str(),
                 &play_state_tx,
+                &store_state_tx,
                 &music_info_tx,
                 &music_meta_tx,
                 &music_image_tx,
@@ -127,26 +134,92 @@ fn play_music(id: String, position: Option<Time>, app: AppHandle) {
             }
         });
 
+        // Get music meta data if not already cached
+        if music_file.image_path.is_none() {
+            let playlist = cloned_music_file.clone();
+            thread::spawn(move || {
+                let playlists = vec![playlist.clone()];
+                let (tx, rx) = channel::<MusicMap>();
+                let cloned_app = app_cache.clone();
+
+                // Initialize cache
+                tauri::async_runtime::spawn(async move {
+                    println!("Executing async task");
+                    let the_app = cloned_app.clone();
+                    if let Ok(cache_dir) = init_cache_dir(cloned_app) {
+                        if let Err(err) = cache::init_cache(cache_dir, playlists, &tx).await {
+                            println!("err:{:#?}", err);
+                            the_app.emit("error", err).unwrap();
+                        }
+                    }
+                });
+
+                let cloned_app = app_cache.clone();
+                thread::spawn(move || {
+                    for music_map in rx {
+                        let name = music_map.name;
+                        let artist = music_map.artist;
+                        let album = music_map.album;
+                        let image_path = music_map.image_path;
+                        let music_files_state = cloned_app.state::<Mutex<MusicFilesState>>();
+                        // Lock the state and modify it
+                        let mut state = music_files_state.lock().unwrap();
+                        let mut music_files = state.get();
+
+                        if let Some(music) = music_files.iter_mut().find(|m| m.name == name) {
+                            music.artist = Some(artist.clone());
+                            music.album = Some(album.clone());
+                            music.image_path = Some(image_path.clone());
+                            let returned_music_file = music.clone();
+                            // Update the state with modified music_files
+                            state.set(music_files.clone());
+
+                            // Store the updated playlist
+                            store::store_playlist(&cloned_app, &music_files);
+
+                            // Emit the update event
+                            cloned_app
+                                .emit("music_data_completion", returned_music_file)
+                                .unwrap();
+                        }
+                    }
+                });
+            });
+        }
+
         thread::spawn(move || {
             for music_info in music_info_rx {
                 app_info.emit("music-info", music_info).unwrap();
             }
         });
+
         thread::spawn(move || {
             for play_state in play_state_rx {
-                let cloned_play_state = play_state.clone();
                 app_play_state.emit("play-state", play_state).unwrap();
-                store::store_play_state(&app_play_state, Some(cloned_play_state));
             }
         });
+
         thread::spawn(move || {
             for music_meta in music_meta_rx {
                 app_meta.emit("music-meta", music_meta).unwrap();
             }
         });
+
         thread::spawn(move || {
             for music_image in music_image_rx {
                 app_image.emit("music-image", music_image).unwrap();
+            }
+        });
+
+        thread::spawn(move || {
+            let mut last_store_time = std::time::Instant::now();
+            for play_state in store_state_rx {
+                // Store play state if 1 second has passed
+                let now = std::time::Instant::now();
+                if now.duration_since(last_store_time).as_secs() >= 1 {
+                    store::store_play_state(&app_store, Some(play_state));
+                    last_store_time = now;
+                }
             }
         });
     }
@@ -172,29 +245,30 @@ fn init_cache_dir(app: AppHandle) -> Result<PathBuf, ()> {
 }
 
 #[tauri::command]
-fn clear_cache(app: AppHandle) {
+fn clear_cache(music_files_state: State<'_, Mutex<MusicFilesState>>, app: AppHandle) {
     let cloned_app = app.clone();
     let result = init_cache_dir(cloned_app);
     if let Ok(cache_dir) = result {
         let result = cache::clear_cache(cache_dir);
         if let Err(err) = result {
             app.emit("error", err).unwrap();
+        } else {
+            let playlist = {
+                let playlist = music_files_state.lock().unwrap().get();
+                let mut playlist = playlist.clone();
+                for music in playlist.iter_mut() {
+                    music.image_path = None;
+                }
+                music_files_state.lock().unwrap().set(playlist.clone());
+                playlist
+            };
+            store::store_playlist(&app, &playlist);
         }
     }
 }
 
-fn get_image_path(name: String, app: AppHandle) -> Option<String> {
-    let cache_dir = app.path().app_cache_dir().unwrap();
-    let path = cache::load_cache(cache_dir, name);
-    if path.exists() {
-        return Some(path.to_str().unwrap().to_string());
-    }
-    None
-}
-
 #[tauri::command]
 fn pause_action(pause_state: PauseState, app: AppHandle) {
-    println!("pause_state:{:#?}", pause_state);
     if let Some(event_source) = pause_state.event_source {
         match event_source {
             EventSource::Play(_) => {
@@ -464,13 +538,13 @@ fn change_sequence_type(
 }
 
 #[tauri::command]
-async fn playlist_add(
+fn playlist_add(
     files: Vec<String>,
     app: AppHandle,
     music_files_state: State<'_, Mutex<MusicFilesState>>,
 ) -> Result<Vec<MusicFile>, ()> {
     // Create music files from input files
-    let mut music_files: Vec<MusicFile> = files
+    let music_files: Vec<MusicFile> = files
         .into_iter()
         .map(|file| {
             MusicFile::new(
@@ -478,22 +552,11 @@ async fn playlist_add(
                 extract_name_with_path(file.clone()),
                 file,
                 None,
+                None,
+                None,
             )
         })
         .collect();
-
-    // Initialize cache
-    if let Ok(cache_dir) = init_cache_dir(app.clone()) {
-        if let Err(err) = cache::init_cache(cache_dir, music_files.clone()).await {
-            println!("err:{:#?}", err);
-            app.emit("error", err).unwrap();
-        }
-    }
-
-    // Add image paths to music files
-    for music_file in &mut music_files {
-        music_file.image_path = get_image_path(music_file.name.clone(), app.clone());
-    }
 
     // Update state and store playlist
     let playlist = store::load_playlist(&app);
@@ -544,6 +607,70 @@ fn clear_playlist(
 }
 
 #[tauri::command]
+fn init_playlist(
+    app: AppHandle,
+    music_files_state: State<'_, Mutex<MusicFilesState>>,
+) -> Vec<MusicFile> {
+    let playlist = store::load_playlist(&app);
+    let cloned_playlist = playlist.clone();
+    let mut music_files_state = music_files_state.lock().unwrap();
+    music_files_state.set(cloned_playlist);
+
+    let (tx, rx) = channel::<MusicMap>();
+    let cloned_app = app.clone();
+    let filtered_playlist = playlist
+        .clone()
+        .into_iter()
+        .filter(|music| music.image_path.is_none())
+        .collect();
+
+    // Initialize cache
+    tauri::async_runtime::spawn(async move {
+        println!("Executing async task");
+        let the_app = cloned_app.clone();
+        if let Ok(cache_dir) = init_cache_dir(cloned_app) {
+            if let Err(err) = cache::init_cache(cache_dir, filtered_playlist, &tx).await {
+                println!("err:{:#?}", err);
+                the_app.emit("error", err).unwrap();
+            }
+        }
+    });
+
+    let cloned_app = app.clone();
+    thread::spawn(move || {
+        for music_map in rx {
+            let name = music_map.name;
+            let artist = music_map.artist;
+            let album = music_map.album;
+            let image_path = music_map.image_path;
+            let music_files_state = cloned_app.state::<Mutex<MusicFilesState>>();
+            // Lock the state and modify it
+            let mut state = music_files_state.lock().unwrap();
+            let mut music_files = state.get();
+
+            if let Some(music) = music_files.iter_mut().find(|m| m.name == name) {
+                music.artist = Some(artist.clone());
+                music.album = Some(album.clone());
+                music.image_path = Some(image_path.clone());
+                let returned_music_file = music.clone();
+                // Update the state with modified music_files
+                state.set(music_files.clone());
+
+                // Store the updated playlist
+                store::store_playlist(&cloned_app, &music_files);
+
+                // Emit the update event
+                cloned_app
+                    .emit("music_data_completion", returned_music_file)
+                    .unwrap();
+            }
+        }
+    });
+
+    playlist
+}
+
+#[tauri::command]
 fn load_playlist(
     app: AppHandle,
     music_files_state: State<'_, Mutex<MusicFilesState>>,
@@ -552,7 +679,7 @@ fn load_playlist(
     let cloned_playlist = playlist.clone();
     let mut music_files_state = music_files_state.lock().unwrap();
     music_files_state.set(cloned_playlist);
-    println!("playlist>>>>{:#?}", playlist);
+
     playlist
 }
 
@@ -577,7 +704,6 @@ fn load_play_state(
     time_position_state: State<'_, Mutex<TimePositionState>>,
 ) -> Option<PlayState> {
     let play_state = store::load_play_state(&app);
-    println!("play_state:{:#?}", play_state);
     match play_state {
         Some(play_state) => {
             let cloned_play_state = play_state.clone();
@@ -596,6 +722,12 @@ fn load_play_state(
 #[tauri::command]
 fn show_main_window(window: tauri::Window) {
     window.get_webview_window("main").unwrap().show().unwrap();
+}
+
+#[tauri::command]
+fn get_cache_size(app: AppHandle) -> String {
+    let cache_dir = app.path().app_cache_dir().unwrap();
+    cache::get_cache_dir_size(cache_dir)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -628,9 +760,11 @@ pub fn run() {
             delete_from_playlist,
             clear_playlist,
             show_main_window,
+            init_playlist,
             load_playlist,
             load_settings,
-            load_play_state
+            load_play_state,
+            get_cache_size
         ])
         // .setup(|app| {
         //     #[cfg(target_os = "macos")]
@@ -695,4 +829,13 @@ fn extract_name_with_path(path: String) -> String {
     let path = PathBuf::from(path);
     let name = path.file_stem().unwrap().to_str().unwrap();
     name.to_string()
+}
+
+fn get_image_path(name: String, app: AppHandle) -> Option<String> {
+    let cache_dir = app.path().app_cache_dir().unwrap();
+    let path = cache::load_cache(cache_dir, name);
+    if path.exists() {
+        return Some(path.to_str().unwrap().to_string());
+    }
+    None
 }

@@ -142,6 +142,7 @@ pub fn start_play(
     time_position: Option<Time>,
     music_path: &str,
     play_state: &Sender<PlayState>,
+    store_state: &Sender<PlayState>,
     music_info_tx: &Sender<MusicInfo>,
     music_meta_tx: &Sender<MusicMeta>,
     music_image_tx: &Sender<MusicImage>,
@@ -255,6 +256,7 @@ pub fn start_play(
                 &decode_opts,
                 no_progress,
                 play_state,
+                store_state,
                 music_meta_tx,
                 app,
             )
@@ -280,6 +282,7 @@ fn play(
     decode_opts: &DecoderOptions,
     no_progress: bool,
     play_state_tx: &Sender<PlayState>,
+    store_state_tx: &Sender<PlayState>,
     music_meta_tx: &Sender<MusicMeta>,
     app: &AppHandle,
 ) -> Result<i32> {
@@ -338,6 +341,7 @@ fn play(
             decode_opts,
             no_progress,
             play_state_tx,
+            store_state_tx,
             music_meta_tx,
             app,
         ) {
@@ -379,6 +383,7 @@ fn play_track(
     decode_opts: &DecoderOptions,
     no_progress: bool,
     play_state_tx: &Sender<PlayState>,
+    store_state_tx: &Sender<PlayState>,
     music_meta_tx: &Sender<MusicMeta>,
     app: &AppHandle,
 ) -> Result<i32> {
@@ -512,6 +517,16 @@ fn play_track(
                             }
                         }
                         play_state_tx
+                            .send(PlayState::new(
+                                music_id.clone().unwrap(),
+                                music_name.clone(),
+                                music_path.clone(),
+                                progress.clone(),
+                                left_duration.clone(),
+                            ))
+                            .expect("send the msg to frontend failed!");
+
+                        store_state_tx
                             .send(PlayState::new(
                                 music_id.unwrap(),
                                 music_name,

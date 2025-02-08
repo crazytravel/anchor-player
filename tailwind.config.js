@@ -8,6 +8,7 @@ export default {
         list: 'rgba(29, 29, 29, 0.6)',
         font: '#E4E4E4',
         active: '#D34B60',
+        hover: '#FF7B8E',
         toolbar: 'rgba(29, 29, 29, 0.8)',
         panel: 'rgba(29, 29, 29, 0.95)',
         tertiary: '#A6D600',

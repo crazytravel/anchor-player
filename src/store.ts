@@ -14,6 +14,7 @@ type MusicStore = {
   musicImage?: string
   play: boolean
   infoDisplay: boolean
+  settingDisplay: boolean
   openedFiles: string[]
   musicList: MusicFile[]
   volume: number
@@ -32,6 +33,7 @@ type MusicStore = {
   setMusicImage: (musicImage?: string) => void
   setPlay: (play: boolean) => void
   setInfoDisplay: (infoDisplay: boolean) => void
+  setSettingDisplay: (settingDisplay: boolean) => void
   setOpenedFiles: (openedFiles: string[]) => void
   setMusicList: (musicList: MusicFile[]) => void
   setVolume: (volume: number) => void
@@ -52,6 +54,7 @@ export const useMusicStore = create<MusicStore>((set) => ({
   musicImage: bg,
   play: false,
   infoDisplay: false,
+  settingDisplay: false,
   openedFiles: [],
   musicList: [],
   volume: 1, // 0 - 1
@@ -73,6 +76,7 @@ export const useMusicStore = create<MusicStore>((set) => ({
   setMusicAlbum: (musicAlbum?: string) => set(() => { return { musicAlbum } }),
   setMusicImage: (musicImage?: string) => set({ musicImage }),
   setInfoDisplay: (infoDisplay: boolean) => set({ infoDisplay }),
+  setSettingDisplay: (settingDisplay: boolean) => set({ settingDisplay }),
   setPlay: (play: boolean) => set(() => {
     return { play };
   }),

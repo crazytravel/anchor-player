@@ -140,7 +140,7 @@ body {
 }
 
 .title-wrapper {
-    padding: 1em 1em 0 1em;
+    padding: 2px 1em 0 1em;
     text-align: center;
     height: 6rem;
     text-shadow: 1px 1px 4px #1D1D1D;
@@ -301,8 +301,8 @@ a:hover {
 
 .list>li {
     user-select: none;
-    height: 2.8em;
-    line-height: 2.8em;
+    height: 3em;
+    line-height: 3em;
     list-style: none;
     padding: 0 0.5em;
     display: flex;

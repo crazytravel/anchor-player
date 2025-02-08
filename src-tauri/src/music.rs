@@ -134,39 +134,49 @@ pub struct MusicFile {
     pub name: String,
     pub path: String,
     pub image_path: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
 }
 
 impl MusicFile {
-    pub fn new(id: String, name: String, path: String, image_path: Option<String>) -> Self {
+    pub fn new(
+        id: String,
+        name: String,
+        path: String,
+        image_path: Option<String>,
+        artist: Option<String>,
+        album: Option<String>,
+    ) -> Self {
         Self {
             id,
             name,
             path,
             image_path,
+            artist,
+            album,
         }
     }
 
     pub fn from_json(json: &serde_json::Value) -> Self {
-        let id = match json["id"].as_str() {
-            Some(id) => id.to_string(),
-            None => "".to_string(),
-        };
-        let name = match json["name"].as_str() {
-            Some(name) => name.to_string(),
-            None => "".to_string(),
-        };
-        let path = match json["path"].as_str() {
-            Some(path) => path.to_string(),
-            None => "".to_string(),
-        };
-        let image_path = json["imagePath"]
+        let id = json["id"]
             .as_str()
-            .map(|image_path| image_path.to_string());
+            .map_or("".to_string(), |s| s.to_string());
+        let name = json["name"]
+            .as_str()
+            .map_or("".to_string(), |s| s.to_string());
+        let path = json["path"]
+            .as_str()
+            .map_or("".to_string(), |s| s.to_string());
+        let image_path = json["imagePath"].as_str().map(|s| s.to_string());
+        let artist = json["artist"].as_str().map(|s| s.to_string());
+        let album = json["album"].as_str().map(|s| s.to_string());
         Self {
             id,
             name,
             path,
             image_path,
+            artist,
+            album,
         }
     }
 }
@@ -208,6 +218,25 @@ impl MusicSetting {
         Self {
             volume: self.volume,
             sequence_type,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MusicMap {
+    pub name: String,
+    pub artist: String,
+    pub album: String,
+    pub image_path: String,
+}
+
+impl MusicMap {
+    pub fn new(name: String, artist: String, album: String, image_path: String) -> Self {
+        Self {
+            name,
+            artist,
+            album,
+            image_path,
         }
     }
 }
