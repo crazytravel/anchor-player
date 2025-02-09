@@ -40,99 +40,62 @@ use music::MusicInfo;
 // }
 //
 
-pub fn load_metadata(
-    app: &AppHandle,
-    music_path: &str,
-    music_info_tx: &Sender<MusicInfo>,
-    music_meta_tx: &Sender<MusicMeta>,
-    music_image_tx: &Sender<MusicImage>,
-) -> Result<()> {
+pub fn load_metadata(music_path: &str) -> Option<MusicMeta> {
     let path = Path::new(music_path);
     // Create a hint to help the format registry guess what format reader is appropriate.
     let hint = Hint::new();
-    let source = Box::new(File::open(path)?);
-
+    let source = match File::open(path) {
+        Ok(file) => Box::new(file),
+        Err(_) => return None,
+    };
     // Create the media source stream using the boxed media source from above.
     let mss: MediaSourceStream = MediaSourceStream::new(source, Default::default());
-
     // Use the default options for format readers other than for gapless playback.
     let format_opts = Default::default();
-
     // Use the default options for metadata readers.
     let metadata_opts: MetadataOptions = Default::default();
-
     // Probe the media source stream for metadata and get the format reader.
     match symphonia::default::get_probe().format(&hint, mss, &format_opts, &metadata_opts) {
         Ok(mut probed) => {
-            dump_visuals(&mut probed, music_image_tx);
+            let format = probed.format.metadata();
+            let format_metadata = format.current();
+            let metadata_rev = probed.metadata.get();
+            let tags = if let Some(metadata_rev) = format_metadata {
+                metadata_rev.tags()
+            } else if let Some(current) = metadata_rev.as_ref().and_then(|m| m.current()) {
+                current.tags()
+            } else {
+                &[]
+            };
 
-            let tracks = probed.format.tracks();
-            if !tracks.is_empty() {
-                for track in tracks.iter() {
-                    let params = &track.codec_params;
-
-                    let mut music_info = MusicInfo::new();
-                    if let Some(codec) = symphonia::default::get_codecs().get_codec(params.codec) {
-                        music_info.codec = codec.long_name.to_string();
-                        music_info.codec_short = codec.short_name.to_string();
-                    }
-                    if let Some(rate) = params.sample_rate {
-                        music_info.sample_rate = rate.to_string();
-                    }
-                    if params.start_ts > 0 {
-                        if let Some(tb) = params.time_base {
-                            music_info.start_time =
-                                format!("{} ({})", fmt_time(params.start_ts, tb), params.start_ts);
-                        } else {
-                            music_info.start_time = params.start_ts.to_string();
+            if !tags.is_empty() {
+                let mut music_meta = MusicMeta::new("".to_string());
+                // Print tags with a standard tag key first, these are the most common tags.
+                for tag in tags.iter().filter(|tag| tag.is_known()) {
+                    if let Some(std_key) = tag.std_key {
+                        match std_key {
+                            StandardTagKey::Album => {
+                                music_meta.album = tag.value.to_string();
+                            }
+                            StandardTagKey::Artist => {
+                                music_meta.artist = tag.value.to_string();
+                            }
+                            StandardTagKey::TrackTitle => {
+                                music_meta.title = tag.value.to_string();
+                            }
+                            _ => {}
                         }
                     }
-                    if let Some(n_frames) = params.n_frames {
-                        if let Some(tb) = params.time_base {
-                            music_info.duration =
-                                format!("{} ({})", fmt_time(n_frames, tb), n_frames);
-                        } else {
-                            music_info.frames = n_frames.to_string();
-                        }
-                    }
-                    if let Some(tb) = params.time_base {
-                        music_info.time_base = tb.to_string();
-                    }
-                    if let Some(padding) = params.delay {
-                        music_info.encoder_delay = padding.to_string();
-                    }
-                    if let Some(padding) = params.padding {
-                        music_info.encoder_padding = padding.to_string();
-                    }
-                    if let Some(sample_format) = params.sample_format {
-                        music_info.sample_format = format!("{:?}", sample_format);
-                    }
-                    if let Some(bits_per) = params.bits_per_sample {
-                        music_info.bits_per_sample = bits_per.to_string();
-                    }
-                    if let Some(chan) = params.channels {
-                        music_info.channel = chan.count().to_string();
-                        music_info.channel_map = chan.to_string();
-                    }
-                    if let Some(channel_layout) = params.channel_layout {
-                        music_info.channel_layout = format!("{:?}", channel_layout);
-                    }
-                    if let Some(language) = &track.language {
-                        music_info.language = language.to_string();
-                    }
-                    music_info_tx
-                        .send(music_info)
-                        .expect("send the msg to frontend failed!");
                 }
+                return Some(music_meta);
             }
-            // Playback mode.
-            print_format(&mut probed, music_meta_tx, app);
-            Ok(())
+            None
         }
         Err(err) => {
             // The input was not supported by any format reader.
             info!("the input is not supported");
-            Err(err)
+            println!("parse music error:{:#?}", err);
+            None
         }
     }
 }
@@ -627,23 +590,15 @@ fn print_format(probed: &mut ProbeResult, music_meta_tx: &Sender<MusicMeta>, app
     // probe operation.
     if let Some(metadata_rev) = probed.format.metadata().current() {
         print_tags(metadata_rev.tags(), music_meta_tx);
-
-        // Warn that certain tags are preferred.
-        if probed.metadata.get().as_ref().is_some() {
-            info!("tags that are part of the container format are preferentially printed.");
-            info!("not printing additional tags that were found while probing.");
-        }
     } else if let Some(metadata_rev) = probed.metadata.get().as_ref().and_then(|m| m.current()) {
         print_tags(metadata_rev.tags(), music_meta_tx);
     } else {
         let title;
         {
             let music_files_state = app.state::<Mutex<MusicFilesState>>();
-            let music_files_state = music_files_state.lock().unwrap();
-            let music_files = music_files_state.get();
+            let music_files = music_files_state.lock().unwrap().get();
             let id_state = app.state::<Mutex<IdState>>();
-            let id_state = id_state.lock().unwrap();
-            let id = id_state.get();
+            let id = id_state.lock().unwrap().get();
             if id.is_none() {
                 return;
             }

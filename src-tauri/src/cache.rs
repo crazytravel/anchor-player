@@ -11,7 +11,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::from_str;
 use tauri_plugin_http::reqwest;
 
-use crate::music::{MusicError, MusicFile, MusicMap};
+use crate::{
+    music::{MusicError, MusicFile, MusicMap},
+    player,
+};
 
 const CASH_DIR: &str = "cache";
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3";
@@ -42,6 +45,7 @@ pub async fn init_cache(
             tx.send(music_map).expect("failed send image");
         }
     }
+
     let results = request_music_data(filtered_music_files).await;
     let cache_dir = cache_dir.clone();
 
@@ -154,10 +158,13 @@ fn load_cache(cache_dir: PathBuf, search_filename: String) -> Option<PathBuf> {
 
 async fn request_music_data(music_files: Vec<MusicFile>) -> Vec<Result<MusicDataRes, Error>> {
     let futures = music_files.iter().map(|music_file| async move {
-        let url = format!(
-            "https://itunes.apple.com/cn/search?term={}",
-            music_file.name
-        );
+        // parse music data from source file
+        let music_path = music_file.path.clone();
+        let music_meta = player::load_metadata(&music_path);
+        let keyword = music_meta
+            .map(|meta| format!("{} + {}", meta.artist, meta.title))
+            .unwrap_or(music_file.name.clone().replace("-", "+"));
+        let url = format!("https://itunes.apple.com/cn/search?term={}", keyword);
         println!("request url: {:#?}", url);
         let client = reqwest::Client::builder()
             .user_agent(USER_AGENT)
