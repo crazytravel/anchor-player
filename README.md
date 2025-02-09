@@ -3,14 +3,12 @@
 Enjoy high-fidelity audio with this Rust-based player, which uses [Tauri](https://github.com/tauri-apps/tauri) for a smooth user experience and [Symphonia](https://github.com/pdeljanov/Symphonia) for robust audio processing, supporting formats like FLAC, WAV, OGG (lossless), and MP3, AAC, and MKV (audio) for versatile playback.
 
 ## screenshot
-![mac screenshot](./docs/ss-1.webp)
-![mac screenshot](./docs/ss-2.webp)
-![mac screenshot](./docs/ss-3.webp)
-![mac screenshot](./docs/ss-4.webp)
-![mac screenshot](./docs/ss-5.webp)
+![mac screenshot](./docs/ss3.webp)
+![mac screenshot](./docs/ss2.webp)
+![mac screenshot](./docs/ss1.webp)
 
 
 ## Release
-- [macOS](https://github.com/crazytravel/anchor-player/releases/download/v0.1.0/Anchor.Player_0.1.0_aarch64.dmg)
+- [macOS](https://github.com/crazytravel/anchor-player/releases/download/v0.2.0/Anchor.Player_0.2.0_aarch64.dmg)
 - [Windows(TODO)]()
 - [Linux(TODO)]()
