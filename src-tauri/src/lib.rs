@@ -802,12 +802,6 @@ fn convert_to_time(time: f64) -> Time {
     Time::new(integer_part, fractional_part)
 }
 
-fn convert_to_fload(time: Time) -> f64 {
-    let seconds = time.seconds;
-    let fractional = time.frac;
-    seconds as f64 + fractional
-}
-
 // Helper function to get current track ID or first available track
 fn get_current_or_first_track_id(
     id_state: &State<Mutex<IdState>>,
@@ -829,13 +823,4 @@ fn extract_name_with_path(path: String) -> String {
     let path = PathBuf::from(path);
     let name = path.file_stem().unwrap().to_str().unwrap();
     name.to_string()
-}
-
-fn get_image_path(name: String, app: AppHandle) -> Option<String> {
-    let cache_dir = app.path().app_cache_dir().unwrap();
-    let path = cache::load_cache(cache_dir, name);
-    if path.exists() {
-        return Some(path.to_str().unwrap().to_string());
-    }
-    None
 }

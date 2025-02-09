@@ -3,8 +3,6 @@ use std::{
     io::{Error, ErrorKind},
     path::PathBuf,
     sync::mpsc::Sender,
-    thread,
-    time::Duration,
 };
 
 use chrono::{DateTime, Utc};
@@ -28,7 +26,23 @@ pub async fn init_cache(
     if !cache_dir.exists() {
         std::fs::create_dir_all(&cache_dir).unwrap();
     }
-    let results = request_music_data(music_files).await;
+    let mut filtered_music_files = music_files.clone();
+    for music_file in &music_files {
+        let cache_dir = cache_dir.clone();
+        let music_name = music_file.name.clone();
+        let tx = tx.clone();
+        let meta_path = load_meta_cache(cache_dir, music_name.clone());
+        println!("meta_path:{:#?}", meta_path);
+        if let Some(meta_path) = meta_path {
+            // load image from cache, filter out the music that has been cached
+            filtered_music_files.retain(|music| music.name != music_name);
+            // load meta from cache, send message to update playlist
+            let meta = fs::read_to_string(meta_path).unwrap();
+            let music_map: MusicMap = serde_json::from_str(&meta).unwrap();
+            tx.send(music_map).expect("failed send image");
+        }
+    }
+    let results = request_music_data(filtered_music_files).await;
     let cache_dir = cache_dir.clone();
 
     let futures = results
@@ -68,21 +82,26 @@ pub async fn init_cache(
                     .as_ref()
                     .map_or("".to_string(), |s| s.to_string());
                 music_data.artwork_url100.as_ref().map(|artwork_url100| {
-                    let url = artwork_url100.to_string().replace("100x100", "600x600");
-                    let extension = url.split('.').last().unwrap();
-                    let filename = format!("{}.{}", music_data_res.music_name, extension);
+                    let url = artwork_url100.to_string().replace("100x100", "1000x1000");
+                    // let extension = url.split('.').last().unwrap();
+                    // let filename = format!("{}.{}", music_data_res.music_name, extension);
+                    let hashed_filename = md5::compute(music_data_res.music_name.clone());
+                    let hashed_filename = format!("{:x}", hashed_filename);
+                    let filename = format!("{}.webp", hashed_filename);
                     let cache_dir = cache_dir.clone();
                     let music_name = music_data_res.music_name.clone();
 
                     async move {
-                        if let Ok(path) = save_img_to_cache(url, filename, cache_dir).await {
-                            tx.send(MusicMap::new(
+                        if let Ok(path) = save_img_to_cache(url, filename, cache_dir.clone()).await
+                        {
+                            let music_map = MusicMap::new(
                                 music_name,
                                 artist,
                                 album,
                                 path.display().to_string(),
-                            ))
-                            .expect("failed send image");
+                            );
+                            save_meta_to_cache(music_map.clone(), cache_dir);
+                            tx.send(music_map).expect("failed send image");
                         }
                     }
                 })
@@ -102,21 +121,35 @@ pub fn clear_cache(cache_dir: PathBuf) -> Result<(), MusicError> {
     Ok(())
 }
 
-pub fn load_cache(cache_dir: PathBuf, music_name: String) -> PathBuf {
+// fn load_image_cache(cache_dir: PathBuf, music_name: String) -> Option<PathBuf> {
+//     let hash_name = md5::compute(music_name.clone());
+//     let hash_name = format!("{:x}", hash_name);
+//     let filename = format!("{}.webp", hash_name);
+//     load_cache(cache_dir, filename)
+// }
+
+fn load_meta_cache(cache_dir: PathBuf, music_name: String) -> Option<PathBuf> {
+    let hash_name = md5::compute(music_name.clone());
+    let hash_name = format!("{:x}", hash_name);
+    let filename = format!("{}.json", hash_name);
+    println!("hash_name:{:#?}", filename);
+    load_cache(cache_dir, filename)
+}
+
+fn load_cache(cache_dir: PathBuf, search_filename: String) -> Option<PathBuf> {
     // search file by music_name without extension from cache folder
-    let cache_dir = cache_dir.join(CASH_DIR);
     if cache_dir.exists() {
         let files = fs::read_dir(&cache_dir).unwrap();
         for file in files {
             let file = file.unwrap();
             let filename = file.file_name();
             let filename = filename.to_str().unwrap();
-            if filename.starts_with(&music_name) {
-                return file.path();
+            if filename == search_filename {
+                return Some(file.path());
             }
         }
     }
-    cache_dir
+    None
 }
 
 async fn request_music_data(music_files: Vec<MusicFile>) -> Vec<Result<MusicDataRes, Error>> {
@@ -180,6 +213,15 @@ async fn save_img_to_cache(
         .map_err(|e| Error::new(ErrorKind::Other, format!("{}", e)))?;
     fs::write(&file_path, &bytes)?;
     Ok(file_path)
+}
+
+fn save_meta_to_cache(music_map: MusicMap, cache_dir: PathBuf) {
+    let hash_name = md5::compute(music_map.clone().name);
+    let hash_name = format!("{:x}", hash_name);
+    let filename = format!("{}.json", hash_name);
+    let file_path = cache_dir.join(filename);
+    let json = serde_json::to_string(&music_map).unwrap();
+    fs::write(&file_path, json).unwrap();
 }
 
 fn calculate_dir_size(dir: &PathBuf) -> f64 {

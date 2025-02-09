@@ -222,7 +222,7 @@ impl MusicSetting {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MusicMap {
     pub name: String,
     pub artist: String,

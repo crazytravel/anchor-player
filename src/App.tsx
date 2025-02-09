@@ -30,7 +30,7 @@ import {
 
 import { SEQUENCE_TYPES, SUPPORTED_FORMATS } from './constants';
 import { useMusicStore } from './store';
-import { Message } from './components.tsx';
+import Message from './components/message.tsx';
 import Setting from './setting.tsx';
 
 
@@ -41,6 +41,9 @@ function App() {
     playState,
     musicInfo,
     musicTitle,
+    musicImage,
+    musicArtist,
+    musicAlbum,
     play,
     infoDisplay,
     settingDisplay,
@@ -104,7 +107,6 @@ function App() {
       return;
     }
     if (musicList && musicList.length > 0) {
-      console.log('hello:', musicList)
       try {
         setMusicInfo(undefined);
         await invoke('play', {});
@@ -230,23 +232,9 @@ function App() {
     return `${hours}:${formattedMinutes}:${formattedSeconds}`;
   }
 
-  // const initFiles = async (mFiles: MusicFile[]) => {
-  //   const musicFiles: MusicFile[] = [];
-  //   for (const file of mFiles) {
-  //     const name = file.name;
-  //     const path = await invoke<string>('get_image_path', { name });
-  //     // Convert to URL that can be used in frontend
-  //     const imagePath = convertFileSrc(path);
-  //     file.imagePath = imagePath
-  //     musicFiles.push(file);
-  //   }
-  //   return musicFiles;
-  // }
-
   const addPlaylist = async (files: string[]) => {
     const musics = await invoke<MusicFile[]>('playlist_add', { files })
     console.log('musics:', musics)
-    // setMusicList(musics);
     await initPlaylist();
   }
 
@@ -486,6 +474,26 @@ function App() {
     if (!activeId) {
       return;
     }
+
+    const music = musicList.find(music => music.id === activeId)
+    if (!music) return
+
+    if (music.imagePath) {
+      const assetUrl = convertFileSrc(music.imagePath)
+      setMusicImage(assetUrl)
+    } else {
+      setMusicImage(bg)
+    }
+
+    setMusicImage(music.imagePath ? convertFileSrc(music.imagePath) : bg)
+    setMusicArtist(music.artist || '')
+    setMusicAlbum(music.album || '')
+  }, [activeId, musicList]);
+
+  useEffect(() => {
+    if (!activeId) {
+      return;
+    }
     console.log("activeId", activeId)
     setTimeout(() => {
       let index = musicList.findIndex((music) => music.id === activeId);
@@ -497,17 +505,14 @@ function App() {
         });
       }
     }, 500)
-  }, [activeId, musicList]);
-
+  }, [activeId])
 
   return (
     <div className="flex flex-col w-full h-full m-0 p-0 relative">
       <div
         className="absolute inset-0 bg-cover bg-center blur-3xl"
         style={{
-          backgroundImage: `url(${musicList.find(music => music.id === activeId)?.imagePath
-            ? convertFileSrc(musicList.find(music => music.id === activeId)?.imagePath!)
-            : bg})`,
+          backgroundImage: `url(${musicImage})`,
         }}
       ></div>
       <header
@@ -567,8 +572,8 @@ function App() {
           <div className="play-wrapper">
             <div className="title-wrapper">
               <div className="title">{musicTitle}</div>
-              <div className="p-2">{musicList.find(music => music.id == activeId)?.artist}</div>
-              <div>{musicList.find(music => music.id == activeId)?.album}</div>
+              <div className="p-2 truncate">{musicArtist}</div>
+              <div className='truncate'>{musicAlbum}</div>
             </div>
             <div className="img-container">
               <div className={play ? 'img-wrapper rotate' : 'img-wrapper'}>
@@ -668,7 +673,7 @@ function App() {
         </div>
         {
           infoDisplay && <Info
-            onClick={() => setInfoDisplay(false)}
+            onClose={() => setInfoDisplay(false)}
             musicInfo={musicInfo}
           />
         }

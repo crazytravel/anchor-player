@@ -11,6 +11,7 @@ export default {
         hover: '#FF7B8E',
         toolbar: 'rgba(29, 29, 29, 0.8)',
         panel: 'rgba(29, 29, 29, 0.95)',
+        'top-panel': 'rgba(0, 0, 0, 0.9)',
         tertiary: '#A6D600',
         quaternary: '#666666',
         quinary: '#222222',
