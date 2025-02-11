@@ -1,12 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+import { register } from '@tauri-apps/plugin-global-shortcut';
 import { open } from '@tauri-apps/plugin-dialog';
 
 import './App.css';
 import bg from './assets/bg.png';
 
 import { listen } from '@tauri-apps/api/event';
-import { PlayState, MusicFile, MusicInfo, MusicMeta, MusicSetting, MusicError } from './declare.ts';
+import { PlayState, MusicFile, MusicInfo, MusicSetting, MusicError } from './declare.ts';
 import Info from './info';
 import {
   AlbumIcon,
@@ -36,6 +37,8 @@ import Setting from './setting.tsx';
 
 function App() {
   const itemRefs = useRef<(HTMLLIElement | null)[]>([]);
+  const playStateRef = useRef<(string | null)>();
+  const volumeRef = useRef<number>(0);
   const {
     activeId,
     playState,
@@ -102,11 +105,12 @@ function App() {
   };
 
   async function playControl() {
-    if (play) {
+    console.log("state:", playStateRef.current)
+    if (playStateRef.current === 'true') {
       await pause();
       return;
     }
-    if (musicList && musicList.length > 0) {
+    if (itemRefs.current && itemRefs.current.length > 0) {
       try {
         setMusicInfo(undefined);
         await invoke('play', {});
@@ -119,7 +123,7 @@ function App() {
   }
 
   const startPlayPrevious = async () => {
-    if (!musicList || musicList.length <= 0) {
+    if (!itemRefs.current || itemRefs.current.length <= 0) {
       return;
     }
     setPlay(true);
@@ -135,7 +139,7 @@ function App() {
   }
 
   const startPlayNext = async () => {
-    if (!musicList || musicList.length <= 0) {
+    if (!itemRefs.current || itemRefs.current.length <= 0) {
       return;
     }
     setPlay(true);
@@ -300,17 +304,55 @@ function App() {
   };
 
   const registerShortcuts = async () => {
-    // await register(['CommandOrControl+ARROWLEFT', 'CommandOrControl+ARROWRIGHT', 'SPACE'], (event) => {
-    //   if (event.state === "Pressed") {
-    //     if (event.shortcut === 'CommandOrControl+ARROWLEFT') {
-    //       startPlayPrevious();
-    //     } else if (event.shortcut === 'CommandOrControl+ARROWRIGHT') {
-    //       startPlayNext();
-    //     } else if (event.shortcut === 'SPACE') {
-    //       playControl();
-    //     }
-    //   }
-    // });
+    await register(['CommandOrControl+F8', 'MediaPlayPause'], async (event) => {
+      if (event.state === "Pressed") {
+        console.log('play-pause')
+        await playControl();
+      }
+    });
+    await register(['CommandOrControl+F7', 'MediaTrackPrevious'], async (event) => {
+      if (event.state === "Pressed") {
+        console.log('previos')
+        await startPlayPrevious();
+      }
+    });
+    await register(['CommandOrControl+F9', 'MediaTrackNext'], async (event) => {
+      if (event.state === "Pressed") {
+        console.log('next')
+        await startPlayNext();
+      }
+    });
+    await register(['CommandOrControl+F10'], async (event) => {
+      if (event.state === "Pressed") {
+        await handleVolumeChange(0)
+      }
+    });
+    await register(['CommandOrControl+F11'], async (event) => {
+      if (event.state === "Pressed") {
+        let changedVolume = volumeRef.current - 0.1;
+        if (changedVolume < 0) {
+          changedVolume = 0;
+        }
+        if (changedVolume > 1) {
+          changedVolume = 1;
+        }
+        setVolume(changedVolume);
+        await handleVolumeChange(changedVolume);
+      }
+    });
+    await register(['CommandOrControl+F12'], async (event) => {
+      if (event.state === "Pressed") {
+        let changedVolume = volumeRef.current + 0.1;
+        if (changedVolume < 0) {
+          changedVolume = 0;
+        }
+        if (changedVolume > 1) {
+          changedVolume = 1;
+        }
+        setVolume(changedVolume);
+        await handleVolumeChange(changedVolume);
+      }
+    });
   }
 
   const clearList = async () => {
@@ -384,26 +426,6 @@ function App() {
       await finishPlay();
     });
 
-    // const unListenedMeta = listen<MusicMeta>('music-meta', async (event) => {
-    //   console.log('event from music-meta:', event.payload)
-    //   if (!event.payload.title) return;
-    //   setMusicTitle(event.payload.title);
-    //   setMusicMeta(event.payload);
-    //   if (event.payload.artist) {
-    //     setMusicArtist(event.payload.artist);
-    //   }
-    //   if (event.payload.album) {
-    //     setMusicAlbum(event.payload.album);
-    //   }
-    //   let keyword = event.payload.title;
-    //   if (event.payload.album) {
-    //     keyword = event.payload.album + '+' + keyword;
-    //   }
-    //   if (event.payload.artist) {
-    //     keyword = event.payload.artist + '+' + keyword;
-    //   }
-    //   // await fetchMusicInfo(keyword);
-    // });
 
     // const unListenedImage = listen<string>('music-image', (event) => {
     //   // console.log("Received event:", event.payload);
@@ -433,7 +455,7 @@ function App() {
         duration: calDuration(playState.progress, playState.left_duration)
       }
       setMusicInfo(musicInfo);
-      setMusicTitle(playState.name);
+      // setMusicTitle(playState.name);
     }
 
     showWindow();
@@ -577,7 +599,7 @@ function App() {
               <div className='truncate'>{musicAlbum}</div>
             </div>
             <div className="img-container">
-              <div className={play ? 'img-wrapper rotate' : 'img-wrapper'}>
+              <div className={play ? 'img-wrapper rotate' : 'img-wrapper'} data-play={play} ref={(el) => (playStateRef.current = el?.dataset.play)}>
                 <img src={musicList.find(music => music.id == activeId)?.imagePath
                   ? convertFileSrc(musicList.find(music => music.id == activeId)?.imagePath!)
                   : bg} className="logo" alt="music" />
@@ -653,6 +675,7 @@ function App() {
                   )}
                 </div>
                 <input
+                  ref={(el) => volumeRef.current = el ? parseFloat(el.value) : 0}
                   type="range"
                   min="0"
                   max="1"

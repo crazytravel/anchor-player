@@ -211,15 +211,23 @@ impl MusicSetting {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MusicMap {
     pub name: String,
+    pub title: String,
     pub artist: String,
     pub album: String,
     pub image_path: String,
 }
 
 impl MusicMap {
-    pub fn new(name: String, artist: String, album: String, image_path: String) -> Self {
+    pub fn new(
+        name: String,
+        title: String,
+        artist: String,
+        album: String,
+        image_path: String,
+    ) -> Self {
         Self {
             name,
+            title,
             artist,
             album,
             image_path,

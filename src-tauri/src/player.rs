@@ -163,7 +163,6 @@ pub fn start_play(
             if !tracks.is_empty() {
                 for track in tracks.iter() {
                     let params = &track.codec_params;
-                    println!("params:{:#?}", params);
                     let mut music_info = MusicInfo::new();
                     if let Some(codec) = symphonia::default::get_codecs().get_codec(params.codec) {
                         music_info.codec = codec.long_name.to_string();

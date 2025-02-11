@@ -162,8 +162,8 @@ fn play_music(id: String, position: Option<Time>, app: AppHandle) {
                         let mut music_files = state.get();
 
                         if let Some(music) = music_files.iter_mut().find(|m| m.name == name) {
-                            music.artist = Some(artist.clone());
-                            music.album = Some(album.clone());
+                            music.artist = Some(artist);
+                            music.album = Some(album);
                             music.image_path = Some(image_path.clone());
                             let returned_music_file = music.clone();
                             // Update the state with modified music_files
@@ -773,6 +773,20 @@ pub fn run() {
             app.store(PLAYLIST_STORE_FILENAME)?;
             app.store(PLAY_STATE_STORE_FILENAME)?;
             Ok(())
+        })
+        .on_window_event(|win, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                #[cfg(not(target_os = "macos"))]
+                {
+                    event.window().hide().unwrap();
+                }
+
+                #[cfg(target_os = "macos")]
+                {
+                    tauri::AppHandle::hide(win.app_handle()).unwrap();
+                }
+                api.prevent_close();
+            }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
