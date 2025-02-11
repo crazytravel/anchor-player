@@ -384,26 +384,26 @@ function App() {
       await finishPlay();
     });
 
-    const unListenedMeta = listen<MusicMeta>('music-meta', async (event) => {
-      console.log('event from music-meta:', event.payload)
-      if (!event.payload.title) return;
-      setMusicTitle(event.payload.title);
-      setMusicMeta(event.payload);
-      if (event.payload.artist) {
-        setMusicArtist(event.payload.artist);
-      }
-      if (event.payload.album) {
-        setMusicAlbum(event.payload.album);
-      }
-      let keyword = event.payload.title;
-      if (event.payload.album) {
-        keyword = event.payload.album + '+' + keyword;
-      }
-      if (event.payload.artist) {
-        keyword = event.payload.artist + '+' + keyword;
-      }
-      // await fetchMusicInfo(keyword);
-    });
+    // const unListenedMeta = listen<MusicMeta>('music-meta', async (event) => {
+    //   console.log('event from music-meta:', event.payload)
+    //   if (!event.payload.title) return;
+    //   setMusicTitle(event.payload.title);
+    //   setMusicMeta(event.payload);
+    //   if (event.payload.artist) {
+    //     setMusicArtist(event.payload.artist);
+    //   }
+    //   if (event.payload.album) {
+    //     setMusicAlbum(event.payload.album);
+    //   }
+    //   let keyword = event.payload.title;
+    //   if (event.payload.album) {
+    //     keyword = event.payload.album + '+' + keyword;
+    //   }
+    //   if (event.payload.artist) {
+    //     keyword = event.payload.artist + '+' + keyword;
+    //   }
+    //   // await fetchMusicInfo(keyword);
+    // });
 
     // const unListenedImage = listen<string>('music-image', (event) => {
     //   // console.log("Received event:", event.payload);
@@ -454,7 +454,7 @@ function App() {
       unMusicInfoListen.then(f => f());
       unMusicListen.then(f => f());
       unFinishedListen.then(f => f());
-      unListenedMeta.then(f => f());
+      // unListenedMeta.then(f => f());
       // unListenedImage.then(f => f());
       unErrorListen.then(f => f());
     }
@@ -486,6 +486,7 @@ function App() {
     }
 
     setMusicImage(music.imagePath ? convertFileSrc(music.imagePath) : bg)
+    setMusicTitle(music.name || '')
     setMusicArtist(music.artist || '')
     setMusicAlbum(music.album || '')
   }, [activeId, musicList]);

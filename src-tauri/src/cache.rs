@@ -77,6 +77,10 @@ pub async fn init_cache(
             });
 
             filtered_results.first().and_then(|music_data| {
+                let title = music_data
+                    .track_name
+                    .as_ref()
+                    .map_or("".to_string(), |s| s.to_string());
                 let artist = music_data
                     .artist_name
                     .as_ref()
@@ -93,17 +97,12 @@ pub async fn init_cache(
                     let hashed_filename = format!("{:x}", hashed_filename);
                     let filename = format!("{}.webp", hashed_filename);
                     let cache_dir = cache_dir.clone();
-                    let music_name = music_data_res.music_name.clone();
 
                     async move {
                         if let Ok(path) = save_img_to_cache(url, filename, cache_dir.clone()).await
                         {
-                            let music_map = MusicMap::new(
-                                music_name,
-                                artist,
-                                album,
-                                path.display().to_string(),
-                            );
+                            let music_map =
+                                MusicMap::new(title, artist, album, path.display().to_string());
                             save_meta_to_cache(music_map.clone(), cache_dir);
                             tx.send(music_map).expect("failed send image");
                         }
@@ -161,9 +160,10 @@ async fn request_music_data(music_files: Vec<MusicFile>) -> Vec<Result<MusicData
         // parse music data from source file
         let music_path = music_file.path.clone();
         let music_meta = player::load_metadata(&music_path);
+        println!("music_meta:{:#?}", music_meta);
         let keyword = music_meta
             .map(|meta| format!("{} + {}", meta.artist, meta.title))
-            .unwrap_or(music_file.name.clone().replace("-", "+"));
+            .unwrap_or(music_file.name.clone().replace("-", " + "));
         let url = format!("https://itunes.apple.com/cn/search?term={}", keyword);
         println!("request url: {:#?}", url);
         let client = reqwest::Client::builder()

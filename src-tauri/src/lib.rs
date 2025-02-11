@@ -14,9 +14,7 @@ use tauri_plugin_store::StoreExt;
 use uuid::Uuid;
 
 use log::error;
-use music::{
-    MusicError, MusicFile, MusicImage, MusicInfo, MusicMap, MusicMeta, MusicSetting, PlayState,
-};
+use music::{MusicError, MusicFile, MusicImage, MusicInfo, MusicMap, MusicSetting, PlayState};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 mod cache;
@@ -44,13 +42,11 @@ fn play_music(id: String, position: Option<Time>, app: AppHandle) {
     let app_info = app.clone();
     let app_play_state = app.clone();
     let app_store = app.clone();
-    let app_meta = app.clone();
     let app_image = app.clone();
     let app_cache = app.clone();
     let (play_state_tx, play_state_rx) = channel::<PlayState>();
     let (store_state_tx, store_state_rx) = channel::<PlayState>();
     let (music_info_tx, music_info_rx) = channel::<MusicInfo>();
-    let (music_meta_tx, music_meta_rx) = channel::<MusicMeta>();
     let (music_image_tx, music_image_rx) = channel::<MusicImage>();
 
     // Find the music file outside of the lock
@@ -76,7 +72,6 @@ fn play_music(id: String, position: Option<Time>, app: AppHandle) {
                 &play_state_tx,
                 &store_state_tx,
                 &music_info_tx,
-                &music_meta_tx,
                 &music_image_tx,
             )
             .unwrap_or_else(|err| {
@@ -199,11 +194,11 @@ fn play_music(id: String, position: Option<Time>, app: AppHandle) {
             }
         });
 
-        thread::spawn(move || {
-            for music_meta in music_meta_rx {
-                app_meta.emit("music-meta", music_meta).unwrap();
-            }
-        });
+        // thread::spawn(move || {
+        //     for music_meta in music_meta_rx {
+        //         app_meta.emit("music-meta", music_meta).unwrap();
+        //     }
+        // });
 
         thread::spawn(move || {
             for music_image in music_image_rx {

@@ -13,7 +13,7 @@ use symphonia::core::codecs::{DecoderOptions, FinalizeResult, CODEC_TYPE_NULL};
 use symphonia::core::errors::{Error, Result};
 use symphonia::core::formats::{FormatReader, SeekMode, SeekTo, Track};
 use symphonia::core::io::{MediaSource, MediaSourceStream, ReadOnlySource};
-use symphonia::core::meta::{MetadataOptions, MetadataRevision, StandardTagKey, Tag, Visual};
+use symphonia::core::meta::{MetadataOptions, StandardTagKey, Visual};
 use symphonia::core::probe::{Hint, ProbeResult};
 use symphonia::core::units::{Time, TimeBase};
 use tauri::{AppHandle, Manager};
@@ -23,6 +23,8 @@ use crate::state::{IdState, MusicFilesState, PauseState, TimePositionState};
 use crate::{music, output};
 use log::{info, warn};
 use music::MusicInfo;
+
+const DIRTY_DATA: &str = "【熊猫无损音乐www.xmwav.com】更多打包资源下载";
 
 // // Player struct
 // pub struct Player {
@@ -48,18 +50,20 @@ pub fn load_metadata(music_path: &str) -> Option<MusicMeta> {
         Ok(file) => Box::new(file),
         Err(_) => return None,
     };
+
     // Create the media source stream using the boxed media source from above.
     let mss: MediaSourceStream = MediaSourceStream::new(source, Default::default());
     // Use the default options for format readers other than for gapless playback.
     let format_opts = Default::default();
     // Use the default options for metadata readers.
     let metadata_opts: MetadataOptions = Default::default();
-    // Probe the media source stream for metadata and get the format reader.
+    // Probe the media source stream for metadata and get the forma't reader.
     match symphonia::default::get_probe().format(&hint, mss, &format_opts, &metadata_opts) {
         Ok(mut probed) => {
             let format = probed.format.metadata();
             let format_metadata = format.current();
             let metadata_rev = probed.metadata.get();
+
             let tags = if let Some(metadata_rev) = format_metadata {
                 metadata_rev.tags()
             } else if let Some(current) = metadata_rev.as_ref().and_then(|m| m.current()) {
@@ -73,20 +77,28 @@ pub fn load_metadata(music_path: &str) -> Option<MusicMeta> {
                 // Print tags with a standard tag key first, these are the most common tags.
                 for tag in tags.iter().filter(|tag| tag.is_known()) {
                     if let Some(std_key) = tag.std_key {
+                        println!("std_key:{:#?}", std_key);
                         match std_key {
                             StandardTagKey::Album => {
-                                music_meta.album = tag.value.to_string();
+                                music_meta.album = tag.value.to_string().replace(DIRTY_DATA, "");
                             }
                             StandardTagKey::Artist => {
-                                music_meta.artist = tag.value.to_string();
+                                music_meta.artist = tag.value.to_string().replace(DIRTY_DATA, "");
                             }
                             StandardTagKey::TrackTitle => {
-                                music_meta.title = tag.value.to_string();
+                                music_meta.title = tag.value.to_string().replace(DIRTY_DATA, "");
                             }
+                            // StandardTagKey::Lyrics => {
+                            //     music_meta.lyrics = tag
+                            //         .value
+                            //         .to_string()
+                            //         .replace("【熊猫无损音乐www.xmwav.com】更多打包资源下载", "");
+                            // }
                             _ => {}
                         }
                     }
                 }
+                println!("=======>>>>{:#?}", music_meta);
                 return Some(music_meta);
             }
             None
@@ -107,7 +119,6 @@ pub fn start_play(
     play_state: &Sender<PlayState>,
     store_state: &Sender<PlayState>,
     music_info_tx: &Sender<MusicInfo>,
-    music_meta_tx: &Sender<MusicMeta>,
     music_image_tx: &Sender<MusicImage>,
 ) -> Result<i32> {
     let path = Path::new(music_path);
@@ -152,7 +163,7 @@ pub fn start_play(
             if !tracks.is_empty() {
                 for track in tracks.iter() {
                     let params = &track.codec_params;
-
+                    println!("params:{:#?}", params);
                     let mut music_info = MusicInfo::new();
                     if let Some(codec) = symphonia::default::get_codecs().get_codec(params.codec) {
                         music_info.codec = codec.long_name.to_string();
@@ -177,38 +188,17 @@ pub fn start_play(
                             music_info.frames = n_frames.to_string();
                         }
                     }
-                    if let Some(tb) = params.time_base {
-                        music_info.time_base = tb.to_string();
-                    }
-                    if let Some(padding) = params.delay {
-                        music_info.encoder_delay = padding.to_string();
-                    }
-                    if let Some(padding) = params.padding {
-                        music_info.encoder_padding = padding.to_string();
-                    }
                     if let Some(sample_format) = params.sample_format {
                         music_info.sample_format = format!("{:?}", sample_format);
                     }
                     if let Some(bits_per) = params.bits_per_sample {
                         music_info.bits_per_sample = bits_per.to_string();
                     }
-                    if let Some(chan) = params.channels {
-                        music_info.channel = chan.count().to_string();
-                        music_info.channel_map = chan.to_string();
-                    }
-                    if let Some(channel_layout) = params.channel_layout {
-                        music_info.channel_layout = format!("{:?}", channel_layout);
-                    }
-                    if let Some(language) = &track.language {
-                        music_info.language = language.to_string();
-                    }
                     music_info_tx
                         .send(music_info)
                         .expect("send the msg to frontend failed!");
                 }
             }
-            // Playback mode.
-            print_format(&mut probed, music_meta_tx, app);
             // Set the decoder options.
             let decode_opts = Default::default();
             // Play it!
@@ -220,7 +210,6 @@ pub fn start_play(
                 no_progress,
                 play_state,
                 store_state,
-                music_meta_tx,
                 app,
             )
         }
@@ -246,7 +235,6 @@ fn play(
     no_progress: bool,
     play_state_tx: &Sender<PlayState>,
     store_state_tx: &Sender<PlayState>,
-    music_meta_tx: &Sender<MusicMeta>,
     app: &AppHandle,
 ) -> Result<i32> {
     // If the user provided a track number, select that track if it exists, otherwise, select the
@@ -305,7 +293,6 @@ fn play(
             no_progress,
             play_state_tx,
             store_state_tx,
-            music_meta_tx,
             app,
         ) {
             Err(Error::ResetRequired) => {
@@ -347,7 +334,6 @@ fn play_track(
     no_progress: bool,
     play_state_tx: &Sender<PlayState>,
     store_state_tx: &Sender<PlayState>,
-    music_meta_tx: &Sender<MusicMeta>,
     app: &AppHandle,
 ) -> Result<i32> {
     // Get the selected track using the track ID.
@@ -392,13 +378,13 @@ fn play_track(
         }
 
         //Print out new metadata.
-        while !reader.metadata().is_latest() {
-            reader.metadata().pop();
+        // while !reader.metadata().is_latest() {
+        //     reader.metadata().pop();
 
-            if let Some(rev) = reader.metadata().current() {
-                print_update(rev, music_meta_tx);
-            }
-        }
+        //     if let Some(rev) = reader.metadata().current() {
+        //         print_update(rev, music_meta_tx);
+        //     }
+        // }
 
         // Decode the packet into audio samples.
         match decoder.decode(&packet) {
@@ -582,66 +568,6 @@ fn dump_visuals(probed: &mut ProbeResult, music_image_tx: &Sender<MusicImage>) {
         for visual in metadata.visuals().iter() {
             dump_visual(visual, music_image_tx);
         }
-    }
-}
-
-fn print_format(probed: &mut ProbeResult, music_meta_tx: &Sender<MusicMeta>, app: &AppHandle) {
-    // Prefer metadata that's provided in the container format, over other tags found during the
-    // probe operation.
-    if let Some(metadata_rev) = probed.format.metadata().current() {
-        print_tags(metadata_rev.tags(), music_meta_tx);
-    } else if let Some(metadata_rev) = probed.metadata.get().as_ref().and_then(|m| m.current()) {
-        print_tags(metadata_rev.tags(), music_meta_tx);
-    } else {
-        let title;
-        {
-            let music_files_state = app.state::<Mutex<MusicFilesState>>();
-            let music_files = music_files_state.lock().unwrap().get();
-            let id_state = app.state::<Mutex<IdState>>();
-            let id = id_state.lock().unwrap().get();
-            if id.is_none() {
-                return;
-            }
-            let index = music_files
-                .iter()
-                .position(|music_file| music_file.id == id.clone().unwrap())
-                .unwrap_or(0);
-            title = music_files[index].name.clone();
-        }
-        let music_meta = MusicMeta::new(title);
-        music_meta_tx
-            .send(music_meta)
-            .expect("send the msg to frontend failed!");
-    }
-}
-
-fn print_update(rev: &MetadataRevision, music_meta_tx: &Sender<MusicMeta>) {
-    print_tags(rev.tags(), music_meta_tx);
-}
-
-fn print_tags(tags: &[Tag], music_meta_tx: &Sender<MusicMeta>) {
-    if !tags.is_empty() {
-        let mut music_meta = MusicMeta::new("".to_string());
-        // Print tags with a standard tag key first, these are the most common tags.
-        for tag in tags.iter().filter(|tag| tag.is_known()) {
-            if let Some(std_key) = tag.std_key {
-                match std_key {
-                    StandardTagKey::Album => {
-                        music_meta.album = tag.value.to_string();
-                    }
-                    StandardTagKey::Artist => {
-                        music_meta.artist = tag.value.to_string();
-                    }
-                    StandardTagKey::TrackTitle => {
-                        music_meta.title = tag.value.to_string();
-                    }
-                    _ => {}
-                }
-            }
-        }
-        music_meta_tx
-            .send(music_meta)
-            .expect("send the msg to frontend failed!");
     }
 }
 
