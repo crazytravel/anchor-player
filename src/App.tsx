@@ -533,9 +533,10 @@ function App() {
   return (
     <div className="flex flex-col w-full h-full m-0 p-0 relative">
       <div
-        className="absolute inset-0 bg-cover bg-center blur-3xl"
+        className="absolute w-full h-full z-0 inset-0 bg-cover bg-center bg-no-repeat"
         style={{
           backgroundImage: `url(${musicImage})`,
+          filter: 'blur(1.3em)',
         }}
       ></div>
       <header
@@ -594,7 +595,7 @@ function App() {
           </div>
           <div className="play-wrapper">
             <div className="title-wrapper">
-              <div className="title">{musicTitle}</div>
+              <div className="title truncate">{musicTitle}</div>
               <div className="p-2 truncate">{musicArtist}</div>
               <div className='truncate'>{musicAlbum}</div>
             </div>

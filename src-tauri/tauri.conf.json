@@ -16,7 +16,8 @@
         "title": "",
         "titleBarStyle": "Overlay",
         "minWidth": 1024,
-        "minHeight": 768
+        "minHeight": 768,
+        "transparent": true
       }
     ],
     "security": {
