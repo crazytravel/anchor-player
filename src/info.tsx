@@ -25,10 +25,6 @@ function Info({ musicInfo, onClose }: InfoProps) {
           <div className="p-1">{musicInfo?.duration}</div>
         </div>
         <div className="flex">
-          <div className="w-40 text-right p-1">Time Base:</div>
-          <div className="p-1">{musicInfo?.time_base}</div>
-        </div>
-        <div className="flex">
           <div className="w-40 text-right p-1">Bits per Sample:</div>
           <div className="p-1">{musicInfo?.bits_per_sample}bit</div>
         </div>
