@@ -304,55 +304,111 @@ function App() {
   };
 
   const registerShortcuts = async () => {
-    await register(['CommandOrControl+F8', 'MediaPlayPause'], async (event) => {
-      if (event.state === "Pressed") {
-        console.log('play-pause')
-        await playControl();
-      }
-    });
-    await register(['CommandOrControl+F7', 'MediaTrackPrevious'], async (event) => {
-      if (event.state === "Pressed") {
-        console.log('previos')
-        await startPlayPrevious();
-      }
-    });
-    await register(['CommandOrControl+F9', 'MediaTrackNext'], async (event) => {
-      if (event.state === "Pressed") {
-        console.log('next')
-        await startPlayNext();
-      }
-    });
-    await register(['CommandOrControl+F10'], async (event) => {
-      if (event.state === "Pressed") {
-        await handleVolumeChange(0)
-      }
-    });
-    await register(['CommandOrControl+F11'], async (event) => {
-      if (event.state === "Pressed") {
-        let changedVolume = volumeRef.current - 0.1;
-        if (changedVolume < 0) {
-          changedVolume = 0;
+    try {
+      await register(['CommandOrControl+F8'], async (event) => {
+        if (event.state === "Pressed") {
+          await playControl();
         }
-        if (changedVolume > 1) {
-          changedVolume = 1;
+      });
+    } catch (err) {
+      console.log(err)
+    }
+
+    try {
+      await register(['CommandOrControl+F7'], async (event) => {
+        if (event.state === "Pressed") {
+          await startPlayPrevious();
         }
-        setVolume(changedVolume);
-        await handleVolumeChange(changedVolume);
-      }
-    });
-    await register(['CommandOrControl+F12'], async (event) => {
-      if (event.state === "Pressed") {
-        let changedVolume = volumeRef.current + 0.1;
-        if (changedVolume < 0) {
-          changedVolume = 0;
+      });
+    } catch (err) {
+      console.log(err)
+    }
+
+    try {
+      await register(['CommandOrControl+F9', 'MediaTrackNext'], async (event) => {
+        if (event.state === "Pressed") {
+          await startPlayNext();
         }
-        if (changedVolume > 1) {
-          changedVolume = 1;
+      });
+    } catch (err) {
+      console.log(err)
+    }
+
+    try {
+      await register(['MediaPlayPause'], async (event) => {
+        if (event.state === "Pressed") {
+          await playControl();
         }
-        setVolume(changedVolume);
-        await handleVolumeChange(changedVolume);
-      }
-    });
+      });
+    } catch (err) {
+      console.log(err)
+    }
+
+    try {
+      await register(['MediaTrackPrevious'], async (event) => {
+        if (event.state === "Pressed") {
+          await startPlayPrevious();
+        }
+      });
+    } catch (err) {
+      console.log(err)
+    }
+
+    try {
+      await register(['MediaTrackNext'], async (event) => {
+        if (event.state === "Pressed") {
+          await startPlayNext();
+        }
+      });
+    } catch (err) {
+      console.log(err)
+    }
+    try {
+      await register(['CommandOrControl+F10'], async (event) => {
+        if (event.state === "Pressed") {
+          await handleVolumeChange(0)
+        }
+      });
+    } catch (err) {
+      console.log(err)
+    }
+
+    try {
+      await register(['CommandOrControl+F11'], async (event) => {
+        if (event.state === "Pressed") {
+          let changedVolume = volumeRef.current - 0.1;
+          if (changedVolume < 0) {
+            changedVolume = 0;
+          }
+          if (changedVolume > 1) {
+            changedVolume = 1;
+          }
+          setVolume(changedVolume);
+          await handleVolumeChange(changedVolume);
+        }
+      });
+    } catch (err) {
+      console.log(err)
+    }
+
+    try {
+      await register(['CommandOrControl+F12'], async (event) => {
+        if (event.state === "Pressed") {
+          let changedVolume = volumeRef.current + 0.1;
+          if (changedVolume < 0) {
+            changedVolume = 0;
+          }
+          if (changedVolume > 1) {
+            changedVolume = 1;
+          }
+          setVolume(changedVolume);
+          await handleVolumeChange(changedVolume);
+        }
+      });
+    } catch (err) {
+      console.log(err)
+    }
+
   }
 
   const clearList = async () => {
