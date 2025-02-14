@@ -11,6 +11,6 @@ Enjoy high-fidelity audio with this Rust-based player, which uses [Tauri](https:
 
 ## Release
 
-- [macOS](https://github.com/crazytravel/anchor-player/releases/download/v0.2.1/Anchor.Player_0.2.1_aarch64.dmg)
+- [macOS](https://github.com/crazytravel/anchor-player/releases/download/v0.2.2/Anchor.Player_0.2.2_aarch64.dmg)
 - [Windows(TODO)]()
 - [Linux(TODO)]()
