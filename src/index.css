@@ -1,3 +1,21 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #1F2A3D;
+  --color-list: rgba(29, 29, 29, 0.6);
+  --color-font: #E4E4E4;
+  --color-active: #D34B60;
+  --color-hover: #FF7B8E;
+  --color-toolbar: rgba(29, 29, 29, 0.8);
+  --color-panel: rgba(29, 29, 29, 0.95);
+  --color-top-panel: rgba(0, 0, 0, 0.9);
+  --color-tertiary: #A6D600;
+  --color-quaternary: #666666;
+  --color-quinary: #222222;
+  --color-senary: #333333;
+  --color-septenary: #535bf2;
+  --color-octonary: #646cff;
+  --color-denary: #292B36;
+  --color-btn: #4A90E2;
+  --color-btn-hover: #6AAEE;
+}

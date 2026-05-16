@@ -170,10 +170,11 @@ impl<T: AudioOutputSample> AudioOutput for CpalAudioOutputImpl<T> {
             self.sample_buf.copy_interleaved_ref(decoded);
             self.sample_buf.samples().to_vec()
         };
-        // Apply volume
-        let volume_state = app.state::<Mutex<VolumeState>>();
-        let volume_state = volume_state.lock().unwrap();
-        let volume = volume_state.get();
+        let volume = app
+            .state::<Mutex<VolumeState>>()
+            .lock()
+            .map(|s| s.get())
+            .unwrap_or(1.0);
         if volume != 1.0 {
             for sample in samples.iter_mut() {
                 let float_sample: f32 = (*sample).into_sample();

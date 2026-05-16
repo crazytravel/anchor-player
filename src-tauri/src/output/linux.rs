@@ -6,9 +6,10 @@ use crate::output::{AudioOutput, AudioOutputError};
 use libpulse_binding as pulse;
 use libpulse_simple_binding as psimple;
 
+use std::sync::Mutex;
+
 use crate::state::VolumeState;
 use log::{error, warn};
-use tauri::async_runtime::Mutex;
 use tauri::Manager;
 
 pub struct PulseAudioOutput {

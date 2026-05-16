@@ -10,27 +10,27 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-dialog": "~2",
-    "@tauri-apps/plugin-global-shortcut": "~2",
-    "@tauri-apps/plugin-http": "~2",
-    "@tauri-apps/plugin-opener": "^2",
-    "@tauri-apps/plugin-store": "~2",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "zustand": "^5.0.3"
+    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-dialog": "~2.7.1",
+    "@tauri-apps/plugin-global-shortcut": "~2.3.1",
+    "@tauri-apps/plugin-http": "~2.5.9",
+    "@tauri-apps/plugin-opener": "^2.5.4",
+    "@tauri-apps/plugin-store": "~2.4.3",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "zustand": "^5.0.13"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
-    "@types/react": "^18.3.1",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.4",
-    "autoprefixer": "^10.4.20",
-    "postcss": "^8.5.1",
-    "prettier": "3.4.2",
-    "tailwindcss": "^3.4.17",
-    "typescript": "~5.6.2",
-    "vite": "^6.0.3"
+    "@tailwindcss/postcss": "^4.3.0",
+    "@tauri-apps/cli": "^2.11.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.2",
+    "postcss": "^8.5.14",
+    "prettier": "3.8.3",
+    "tailwindcss": "^4.3.0",
+    "typescript": "~6.0.3",
+    "vite": "^8.0.13"
   },
   "packageManager": "pnpm@9.14.4+sha512.c8180b3fbe4e4bca02c94234717896b5529740a6cbadf19fa78254270403ea2f27d4e1d46a08a0f56c89b63dc8ebfd3ee53326da720273794e6200fcf0d184ab"
 }
